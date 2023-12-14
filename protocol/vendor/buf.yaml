@@ -1,0 +1,10 @@
+version: v1
+# name: romashorodok/protocol/vendor
+breaking:
+  use:
+    - FILE
+lint:
+  use:
+    - DEFAULT
+deps:
+  - buf.build/googleapis/googleapis

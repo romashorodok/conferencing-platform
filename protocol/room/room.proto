@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+import "google/api/annotations.proto";
+import "openapiv3/OpenAPIv3.proto";
+import "openapiv3/annotations.proto";
+
+package room;
+
+option (openapi.v3.document) = {
+  components: {
+    security_schemes: {
+      additional_properties: [
+        {
+          name: "BearerAuth";
+          value: {
+            security_scheme: {
+              type: "http";
+              scheme: "bearer";
+            }
+          }
+        }
+      ]
+    }
+  }
+};
+
+service RoomService {
+  rpc CreateRoom(CreateRoomRequest) returns (CreateRoomResponse) {
+    option(google.api.http) = {
+      post: "/rooms";
+    };
+  };
+}
+
+message CreateRoomRequest { }
+message CreateRoomResponse { }
