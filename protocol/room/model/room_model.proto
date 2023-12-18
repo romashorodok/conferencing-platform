@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package room.model;
+
+option go_package = "github.com/romashorodok/conferencing-platform/pkg/gen/model;modelpb";
+
+message Room {
+  string sessionID = 1;
+  string host = 2;
+  string port = 3;
+  repeated Participant participants = 4;
+}
+
+message Participant {
+  string id = 1;
+  string name = 2;
+}

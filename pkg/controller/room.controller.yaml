@@ -1,0 +1,6 @@
+package: room
+generate:
+  echo-server: true
+  embedded-spec: true
+  models: true
+output: room/room.go

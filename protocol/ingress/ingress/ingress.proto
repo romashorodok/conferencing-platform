@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+import "google/api/annotations.proto";
+import "openapiv3/OpenAPIv3.proto";
+import "openapiv3/annotations.proto";
+
+package ingress;
+
+option go_package = "github.com/romashorodok/conferencing-platform/pkg/gen/ingress;ingresspb";
+
+
+option (openapi.v3.document) = {
+  components: {
+    security_schemes: {
+      additional_properties: [
+        {
+          name: "BearerAuth";
+          value: {
+            security_scheme: {
+              type: "http";
+              scheme: "bearer";
+            }
+          }
+        }
+      ]
+    }
+  }
+};
+
+// +-------------+    +---------------+ +--------------+ +---------------+
+// | WHIP client |    | WHIP endpoint | | media server | | WHIP session  |
+// +--+----------+    +---------+-----+ +------+-------+ +--------|------+
+//    |                         |              |                  |
+//    |                         |              |                  |
+//    |HTTP POST (SDP Offer)    |              |                  |
+//    +------------------------>+              |                  |
+//    |201 Created (SDP answer) |              |                  |
+//    +<------------------------+              |                  |
+//    |          ICE REQUEST                   |                  |
+//    +--------------------------------------->+                  |
+//    |          ICE RESPONSE                  |                  |
+//    |<---------------------------------------+                  |
+//    |          DTLS SETUP                    |                  |
+//    |<======================================>|                  |
+//    |          RTP/RTCP FLOW                 |                  |
+//    +<-------------------------------------->+                  |
+//    | HTTP DELETE                                               |
+//    +---------------------------------------------------------->+
+//    | 200 OK                                                    |
+//    <-----------------------------------------------------------x
+//
+// https://datatracker.ietf.org/doc/draft-ietf-wish-whip/
+service WebrtcHttpIngestionController {
+  // If the HTTP POST to the WHIP endpoint has a content type different
+  // than "application/sdp", the WHIP endpoint MUST reject the HTTP POST
+  // request with a "415 Unsupported Media Type" error response.
+  rpc WebrtcHttpIngest(WebrtcHttpIngestRequest) returns (WebrtcHttpIngestResponse) {
+    option(google.api.http) = {
+      post: "/ingress/whip/session/{sessionID}";
+      body: "*";
+    };
+  };
+
+  // To explicitly terminate a session, the WHIP client MUST perform an
+  // HTTP DELETE request to the resource URL returned in the Location
+  // header field of the initial HTTP POST.  Upon receiving the HTTP
+  // DELETE request, the WHIP session will be removed and the resources
+  // freed on the media server, terminating the ICE and DTLS sessions.
+  rpc WebrtcHttpTerminate(WebrtcHttpTerminateRequest) returns (WebrtcHttpTerminateResponse) {
+    option(google.api.http) = {
+      delete: "/ingress/whip/session/{sessionID}";
+    };
+  }
+}
+
+message SessionDescription {
+  string type = 1; // "answer" | "offer" 
+  string sdp = 2;
+}
+
+message WebrtcHttpIngestRequest {
+  SessionDescription offer = 1;
+}
+
+message WebrtcHttpIngestResponse {
+  SessionDescription answer = 1;
+}
+
+message WebrtcHttpTerminateRequest {}
+message WebrtcHttpTerminateResponse {}
+

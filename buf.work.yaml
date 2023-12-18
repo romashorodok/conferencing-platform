@@ -2,4 +2,5 @@ version: v1
 directories:
   - protocol/room
   - protocol/vendor
+  - protocol/ingress
 

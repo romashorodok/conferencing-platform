@@ -8,5 +8,6 @@ pkgs.mkShell {
   buildInputs = with pkgs; [
     gnostic-main
     protoc-gen-fetch-types-main
+    protoc-gen-go
   ];
 }

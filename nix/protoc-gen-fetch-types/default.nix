@@ -9,8 +9,8 @@ buildGoModule rec {
   src = fetchFromGitHub {
     owner = "romashorodok";
     repo = name;
-    rev = "0fc0698ac58c2de8522c2f5da66ed2789e2cec60";
-    sha256 = "c0HY4xYYgpZ/ecq/FMMbw8baTuuEMfFlxfKiCuHSARY=";
+    rev = "142d03be720ee8fd74d3d13ea8e83e8c4093ec30";
+    sha256 = "X8BVzjMTx8TMVimE1U/qi6ndaF+9V0rn8qDKjXXJSjs=";
   };
 
   vendorHash = "sha256-l/tjPEkl/RimBxkkR12xrMNI32SnbK74k7gagHdL9k4=";
