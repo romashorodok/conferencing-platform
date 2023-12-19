@@ -1,16 +1,66 @@
 package ingress
 
 import (
+	"encoding/json"
+	"errors"
+	"log/slog"
+	"net/http"
+
 	echo "github.com/labstack/echo/v4"
+	webrtc "github.com/pion/webrtc/v4"
+	"github.com/romashorodok/conferencing-platform/media-server/pkg/protocol"
 	"github.com/romashorodok/conferencing-platform/pkg/controller/ingress"
-	"github.com/romashorodok/conferencing-platform/pkg/protocol"
+	globalprotocol "github.com/romashorodok/conferencing-platform/pkg/protocol"
 	"go.uber.org/fx"
 )
 
-type whipController struct{}
+var INGEST_ANSWER_TYPE = "answer"
 
-func (*whipController) WebrtcHttpIngestionControllerWebrtcHttpIngest(ctx echo.Context, sessionID string) error {
-	panic("unimplemented")
+type whipController struct {
+	roomService protocol.RoomService
+	logger      *slog.Logger
+}
+
+const (
+	MISSING_ICE_UFRAG_MSG = "offer must contain at least one track or data channel"
+	NOT_FOUND_ROOM_MSG    = "not found room"
+)
+
+func (ctrl *whipController) WebrtcHttpIngestionControllerWebrtcHttpIngest(ctx echo.Context, sessionID string) error {
+	var request ingress.WebrtcHttpIngestRequest
+
+	if err := json.NewDecoder(ctx.Request().Body).Decode(&request); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+
+	room := ctrl.roomService.GetRoom(sessionID)
+	if room == nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, errors.New(NOT_FOUND_ROOM_MSG))
+	}
+
+	participant, err := room.AddParticipant(*request.Offer.Sdp)
+	if err != nil {
+		if errors.Is(err, webrtc.ErrSessionDescriptionMissingIceUfrag) {
+			return echo.NewHTTPError(http.StatusPreconditionFailed, MISSING_ICE_UFRAG_MSG)
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+
+	answer, err := participant.GenerateSDPAnswer()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+
+	ctx.JSON(http.StatusCreated,
+		&ingress.WebrtcHttpIngestResponse{
+			Answer: &ingress.SessionDescription{
+				Sdp:  &answer,
+				Type: &INGEST_ANSWER_TYPE,
+			},
+		},
+	)
+
+	return nil
 }
 
 func (*whipController) WebrtcHttpIngestionControllerWebrtcHttpTerminate(ctx echo.Context, sessionID string) error {
@@ -28,14 +78,20 @@ func (ctrl *whipController) Resolve(c *echo.Echo) error {
 }
 
 var (
-	_ ingress.ServerInterface = (*whipController)(nil)
-	_ protocol.HttpResolvable = (*whipController)(nil)
+	_ ingress.ServerInterface       = (*whipController)(nil)
+	_ globalprotocol.HttpResolvable = (*whipController)(nil)
 )
 
 type newWhipController_Params struct {
 	fx.In
+
+	RoomService protocol.RoomService
+	Logger      *slog.Logger
 }
 
 func NewWhipController(params newWhipController_Params) *whipController {
-	return &whipController{}
+	return &whipController{
+		roomService: params.RoomService,
+		logger:      params.Logger,
+	}
 }

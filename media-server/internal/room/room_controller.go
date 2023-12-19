@@ -1,6 +1,7 @@
 package room
 
 import (
+	"log"
 	"net/http"
 
 	echo "github.com/labstack/echo/v4"
@@ -21,8 +22,14 @@ func (c *roomController) RoomControllerRoomCreate(ctx echo.Context) error {
 	return nil
 }
 
-func (*roomController) RoomControllerRoomDelete(ctx echo.Context, sessionID string) error {
-	panic("unimplemented")
+func (ctrl *roomController) RoomControllerRoomDelete(ctx echo.Context, sessionID string) error {
+	err := ctrl.roomService.DeleteRoom(sessionID)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	ctx.JSON(http.StatusCreated, make(room.RoomDeleteResponse))
+	return nil
 }
 
 func (ctrl *roomController) RoomControllerRoomList(ctx echo.Context) error {

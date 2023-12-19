@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
+	webrtc "github.com/pion/webrtc/v4"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/protocol"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/roomcontext"
 	"github.com/romashorodok/conferencing-platform/pkg/controller/room"
@@ -13,18 +14,27 @@ import (
 )
 
 var (
-	RoomNotExistError     error = errors.New("room not exist")
-	RoomCancelByUserError error = errors.New("room canceled by user")
+	ErrRoomNotExist     error = errors.New("room not exist")
+	ErrRoomIDIsEmpty    error = errors.New("room id is empty")
+	ErrRoomCancelByUser error = errors.New("room canceled by user")
 )
 
 type roomService struct {
-	sync.RWMutex
-	logger *slog.Logger
+	sync.Mutex
 
+	webrtcAPI      *webrtc.API
+	logger         *slog.Logger
 	roomContextMap map[protocol.RoomID]protocol.RoomContext
 }
 
-// ListRoom implements protocol.RoomService.
+func (s *roomService) GetRoom(roomID string) protocol.RoomContext {
+	room, exist := s.roomContextMap[roomID]
+	if !exist {
+		return nil
+	}
+	return room
+}
+
 func (s *roomService) ListRoom() []room.Room {
 	var result []room.Room
 	for _, room := range s.roomContextMap {
@@ -36,9 +46,10 @@ func (s *roomService) ListRoom() []room.Room {
 func (s *roomService) DeleteRoom(roomID string) error {
 	room, exist := s.roomContextMap[roomID]
 	if !exist {
-		return RoomNotExistError
+		return ErrRoomNotExist
 	}
-	room.Cancel(RoomCancelByUserError)
+	room.Cancel(ErrRoomCancelByUser)
+	delete(s.roomContextMap, roomID)
 	return nil
 }
 
@@ -46,9 +57,20 @@ func (s *roomService) CreateRoom(option *protocol.RoomCreateOption) (protocol.Ro
 	s.Lock()
 	defer s.Unlock()
 
-	roomID := uuid.New().String()
+	var roomID string
+	if option.RoomID != nil {
+		if *option.RoomID == "" {
+			return nil, ErrRoomIDIsEmpty
+		}
+		roomID = *option.RoomID
+	} else {
+		roomID = uuid.New().String()
+	}
+
 	s.roomContextMap[roomID] = roomcontext.NewRoomContext(
 		roomcontext.RoomContextOption{
+			WebrtcAPI:  s.webrtcAPI,
+			Logger:     s.logger,
 			RoomID:     roomID,
 			RoomOption: option,
 		},
@@ -65,11 +87,13 @@ var _ protocol.RoomService = (*roomService)(nil)
 type NewRoomService_Params struct {
 	fx.In
 
-	Logger *slog.Logger
+	WebrtcAPI *webrtc.API
+	Logger    *slog.Logger
 }
 
 func NewRoomService(params NewRoomService_Params) *roomService {
 	return &roomService{
+		webrtcAPI:      params.WebrtcAPI,
 		logger:         params.Logger,
 		roomContextMap: make(map[protocol.RoomID]protocol.RoomContext),
 	}

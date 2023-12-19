@@ -15,13 +15,16 @@ type (
 type RoomContext interface {
 	Cancel(error)
 	Info() RoomInfo
+	AddParticipant(offer string) (PeerContext, error)
 }
 
 type RoomCreateOption struct {
 	MaxParticipants int32
+	RoomID          *string
 }
 
 type RoomService interface {
+	GetRoom(RoomID) RoomContext
 	CreateRoom(*RoomCreateOption) (RoomContext, error)
 	DeleteRoom(RoomID) error
 	ListRoom() []RoomInfoList
