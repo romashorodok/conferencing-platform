@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -38,6 +39,13 @@ func SendOffer(host string, offer string) (string, error) {
 		return "", errors.Join(errors.New("unable send request."), err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		message, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return "", errors.New("Something so wrong even cannot read response")
+		}
+		return "", errors.New(string(message))
+	}
 
 	var result ingress.WebrtcHttpIngestResponse
 	if err = json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -62,6 +70,7 @@ func main() {
 	}
 	defer peerConnection.Close()
 	dataChannel, _ := peerConnection.CreateDataChannel("datachann-ugrag", nil)
+
 	dataChannel.OnOpen(func() {
 		fmt.Printf("Data channel '%s'-'%d' open. Random messages will now be sent to any connected DataChannels every 5 seconds\n", dataChannel.Label(), dataChannel.ID())
 		for range time.NewTicker(5 * time.Second).C {
@@ -110,6 +119,7 @@ func main() {
 	answer, err := SendOffer(mediaServerUri, offer.SDP)
 	if err != nil {
 		log.Println("send offer error.", err)
+		return
 	}
 
 	peerConnection.SetRemoteDescription(webrtc.SessionDescription{

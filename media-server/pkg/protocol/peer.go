@@ -11,5 +11,7 @@ type PeerContext interface {
 	SetRemoteSessionDescriptor(offer string) error
 	GenerateSDPAnswer() (string, error)
 	OnDataChannel()
+	OnCandidate()
+	OnTrack()
 	Info() *PeerInfo
 }

@@ -46,10 +46,7 @@ func (r *roomContext) AddParticipant(offer string) (protocol.PeerContext, error)
 		peerContext.Cancel(err)
 		return nil, err
 	}
-	peerContext.OnDataChannel()
-
 	r.peerContextMap[peerID] = peerContext
-
 	return peerContext, nil
 }
 

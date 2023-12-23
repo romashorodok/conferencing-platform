@@ -38,7 +38,7 @@ func (ctrl *whipController) WebrtcHttpIngestionControllerWebrtcHttpIngest(ctx ec
 		return echo.NewHTTPError(http.StatusInternalServerError, errors.New(NOT_FOUND_ROOM_MSG))
 	}
 
-	participant, err := room.AddParticipant(*request.Offer.Sdp)
+	peer, err := room.AddParticipant(*request.Offer.Sdp)
 	if err != nil {
 		if errors.Is(err, webrtc.ErrSessionDescriptionMissingIceUfrag) {
 			return echo.NewHTTPError(http.StatusPreconditionFailed, MISSING_ICE_UFRAG_MSG)
@@ -46,7 +46,11 @@ func (ctrl *whipController) WebrtcHttpIngestionControllerWebrtcHttpIngest(ctx ec
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
-	answer, err := participant.GenerateSDPAnswer()
+	peer.OnDataChannel()
+	peer.OnCandidate()
+	peer.OnTrack()
+
+	answer, err := peer.GenerateSDPAnswer()
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}

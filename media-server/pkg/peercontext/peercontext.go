@@ -3,6 +3,7 @@ package peercontext
 import (
 	"context"
 	"fmt"
+	"log"
 	"log/slog"
 
 	webrtc "github.com/pion/webrtc/v4"
@@ -27,17 +28,55 @@ func (p *peerContext) Info() *protocol.PeerInfo {
 }
 
 func (p *peerContext) OnDataChannel() {
-	p.peerConnection.OnDataChannel(func(d *webrtc.DataChannel) {
-		fmt.Printf("New DataChannel %s %d\n", d.Label(), d.ID())
+	p.peerConnection.OnDataChannel(func(dc *webrtc.DataChannel) {
+		stats, ok := p.peerConnection.GetStats().GetDataChannelStats(dc)
+		if !ok {
+			slog.Error(fmt.Sprintf("unable get data_channel stats for %s:%s", dc.Label(), dc.ID()))
+			_ = dc.Close()
+			return
+		}
 
-		d.OnOpen(func() {
-			fmt.Printf("Data channel '%s'-'%d' open.", d.Label(), d.ID())
+		logger := p.logger.With(
+			slog.Group("data_channel",
+				slog.String("stats.ID:", stats.ID),
+
+				slog.Int("dc.ID", int(*dc.ID())),
+				slog.String("dc.label", dc.Label()),
+			),
+		)
+
+		logger.Debug("OnDataChannel connect.")
+
+		dc.OnOpen(func() {
+			logger.Debug("OnDataChannel OnOpen")
 		})
 
-		d.OnMessage(func(msg webrtc.DataChannelMessage) {
-			fmt.Printf("Message from DataChannel '%s': '%s'\n", d.Label(), string(msg.Data))
+		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+			logger.Debug(fmt.Sprintf("OnDataChannel OnMessage: %s", msg.Data))
 		})
 	})
+}
+
+func (p *peerContext) OnTrack() {
+	p.peerConnection.OnTrack(func(track *webrtc.TrackRemote, recv *webrtc.RTPReceiver) {
+		for {
+			rtp, _, err := track.ReadRTP()
+			if err != nil {
+				log.Println("error", err)
+			}
+			log.Println(rtp)
+		}
+	})
+}
+
+func (p *peerContext) OnCandidate() {
+	p.peerConnection.OnICECandidate(
+		func(candidate *webrtc.ICECandidate) {
+			if candidate != nil {
+				p.logger.Debug(fmt.Sprintf("On ICE candidate: %+v", candidate))
+			}
+		},
+	)
 }
 
 // The offer must contain at least 1 ice-ufrag. If the offer does not contain media, it return an error.
