@@ -6,18 +6,34 @@ import (
 	"log"
 	"log/slog"
 
-	webrtc "github.com/pion/webrtc/v4"
+	webrtc "github.com/pion/webrtc/v3"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/protocol"
+	"github.com/romashorodok/conferencing-platform/media-server/pkg/sfu"
 )
 
 type peerContext struct {
-	api            *webrtc.API
-	logger         *slog.Logger
-	peerConnection *webrtc.PeerConnection
-	peerID         string
+	api    *webrtc.API
+	logger *slog.Logger
+
+	peerID               string
+	peerConnection       *webrtc.PeerConnection
+	peerSignalingChannel *webrtc.DataChannel
+	sfu                  *sfu.SelectiveForwardingUnit
 
 	ctx    context.Context
 	cancel context.CancelCauseFunc
+}
+
+func (p *peerContext) GetSignalingChannel() (*webrtc.DataChannel, error) {
+	if p.peerSignalingChannel == nil {
+		return nil, protocol.ErrPeerSignalingChannelNotFound
+	}
+	log.Println("signaling function", p.peerSignalingChannel)
+	return p.peerSignalingChannel, nil
+}
+
+func (p *peerContext) GetPeerConnection() *webrtc.PeerConnection {
+	return p.peerConnection
 }
 
 func (p *peerContext) Info() *protocol.PeerInfo {
@@ -25,6 +41,14 @@ func (p *peerContext) Info() *protocol.PeerInfo {
 		ID:   p.peerID,
 		Name: p.peerID,
 	}
+}
+
+func (p *peerContext) setupSignalingChannel(dc *webrtc.DataChannel) {
+	if protocol.PeerSignalingChannelLabel != dc.Label() {
+		return
+	}
+	p.peerSignalingChannel = dc
+	log.Println("set signaling channel")
 }
 
 func (p *peerContext) OnDataChannel() {
@@ -35,6 +59,7 @@ func (p *peerContext) OnDataChannel() {
 			_ = dc.Close()
 			return
 		}
+		p.setupSignalingChannel(dc)
 
 		logger := p.logger.With(
 			slog.Group("data_channel",
@@ -57,14 +82,26 @@ func (p *peerContext) OnDataChannel() {
 	})
 }
 
-func (p *peerContext) OnTrack() {
+func (p *peerContext) OnTrack(signaling func()) {
 	p.peerConnection.OnTrack(func(track *webrtc.TrackRemote, recv *webrtc.RTPReceiver) {
+		localTrack, err := p.sfu.AddTrack(track)
+		if err != nil {
+			p.logger.Error(fmt.Sprint("Failed add track to the sfu", err))
+			return
+		}
+		defer p.sfu.RemoveTrack(localTrack)
+		signaling()
+
 		for {
 			rtp, _, err := track.ReadRTP()
 			if err != nil {
-				log.Println("error", err)
+				log.Println("read error", err)
+				return
 			}
-			log.Println(rtp)
+
+			if err = localTrack.WriteRTP(rtp); err != nil {
+				return
+			}
 		}
 	})
 }
@@ -116,9 +153,12 @@ func (p *peerContext) Cancel(reason error) {
 	p.cancel(reason)
 }
 
+var _ protocol.PeerContext = (*peerContext)(nil)
+
 type NewPeerContext_Params struct {
 	API           *webrtc.API
 	Logger        *slog.Logger
+	SFU           *sfu.SelectiveForwardingUnit
 	ParentContext context.Context
 	PeerID        string
 }
@@ -132,9 +172,10 @@ func NewPeerContext(params NewPeerContext_Params) (*peerContext, error) {
 	}
 
 	return &peerContext{
-		peerConnection: peerConnection,
 		api:            params.API,
 		logger:         params.Logger,
+		peerConnection: peerConnection,
+		sfu:            params.SFU,
 		peerID:         params.PeerID,
 		ctx:            ctx,
 		cancel:         cancel,

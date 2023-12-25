@@ -24,6 +24,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/google/uuid"
 	"github.com/pion/mediadevices"
 	"github.com/pion/mediadevices/pkg/codec"
 	"github.com/pion/mediadevices/pkg/codec/x264"
@@ -171,13 +172,20 @@ func main() {
 	}
 	defer peerConnection.Close()
 
+	dataChannel, _ := peerConnection.CreateDataChannel("signaling", nil)
+
+	dataChannel.OnMessage(func(msg webrtc.DataChannelMessage) {
+		fmt.Printf("Message from DataChannel '%s': '%s'\n", dataChannel.Label(), string(msg.Data))
+	})
+
 	encoder, err := NewExampleEncoder(640, 480)
 	if err != nil {
 		log.Println(err)
 		return
 	}
 
-	track, err := webrtc.NewTrackLocalStaticRTP(encoder.Metadata.RTPCodecCapability, "vp9", "local-vp9")
+    trackID := uuid.New().String()
+	track, err := webrtc.NewTrackLocalStaticRTP(encoder.Metadata.RTPCodecCapability, trackID, trackID)
 	if err != nil {
 		log.Println(err)
 		return

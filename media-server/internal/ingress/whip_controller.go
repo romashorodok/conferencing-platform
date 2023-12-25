@@ -3,11 +3,12 @@ package ingress
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"log/slog"
 	"net/http"
 
 	echo "github.com/labstack/echo/v4"
-	webrtc "github.com/pion/webrtc/v4"
+	webrtc "github.com/pion/webrtc/v3"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/protocol"
 	"github.com/romashorodok/conferencing-platform/pkg/controller/ingress"
 	globalprotocol "github.com/romashorodok/conferencing-platform/pkg/protocol"
@@ -46,9 +47,15 @@ func (ctrl *whipController) WebrtcHttpIngestionControllerWebrtcHttpIngest(ctx ec
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
-	peer.OnDataChannel()
-	peer.OnCandidate()
-	peer.OnTrack()
+	for _, typ := range []webrtc.RTPCodecType{webrtc.RTPCodecTypeVideo, webrtc.RTPCodecTypeAudio} {
+		if _, err := peer.GetPeerConnection().AddTransceiverFromKind(typ, webrtc.RTPTransceiverInit{
+			// Direction: webrtc.RTPTransceiverDirectionSendonly,
+			Direction: webrtc.RTPTransceiverDirectionRecvonly,
+		}); err != nil {
+			log.Print(err)
+			return err
+		}
+	}
 
 	answer, err := peer.GenerateSDPAnswer()
 	if err != nil {

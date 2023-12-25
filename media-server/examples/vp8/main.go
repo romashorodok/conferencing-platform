@@ -225,6 +225,11 @@ func main() {
 		return
 	}
 	defer peerConnection.Close()
+	dataChannel, _ := peerConnection.CreateDataChannel("signaling", nil)
+
+	dataChannel.OnMessage(func(msg webrtc.DataChannelMessage) {
+		fmt.Printf("Message from DataChannel '%s': '%s'\n", dataChannel.Label(), string(msg.Data))
+	})
 
 	encoder, err := NewExampleEncoder(640, 480)
 	if err != nil {
