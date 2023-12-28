@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useState } from 'react'
+import { useCallback, useContext, useEffect, useLayoutEffect, useState } from 'react'
 import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
 import './App.css'
@@ -111,7 +111,8 @@ enum SignalEvent {
   Offer = "offer",
   Answer = "answer",
   // https://datatracker.ietf.org/doc/html/draft-ietf-mmusic-trickle-ice
-  TrickleIceCandidate = "trickle-ice-candidate"
+  // TrickleIceCandidate = "trickle-ice-candidate"
+  TrickleIceCandidate = "candidate"
 }
 
 export class Signal extends EventEmitter {
@@ -204,18 +205,62 @@ function useSubscriber() {
   }, [subscriber, signal])
 
   const subscribe = useCallback(async () => {
-    signal.on(SignalEvent.Offer, function onOffer(offer) {
-      try {
-        negotiation(JSON.parse(offer))
-      } catch (err) {
-        console.log(err)
-      } finally {
-        signal.off(SignalEvent.Offer, onOffer)
-      }
-    })
     await signal.onConnect.wait
     signal.subscribe()
   }, [signal, negotiation])
+
+  useEffect(() => {
+    const onOffer = (offer: any) => {
+      try {
+        console.log("offer", JSON.parse(offer))
+        negotiation(JSON.parse(offer))
+      } catch (err) {
+        console.log(err)
+      }
+      // finally {
+      //   signal.off(SignalEvent.Offer, onOffer)
+      // }
+    }
+    signal.on(SignalEvent.Offer, onOffer)
+    return () => {
+      signal.off(SignalEvent.Offer, onOffer)
+    }
+  }, [signal, negotiation])
+
+  useEffect(() => {
+    (async () => {
+
+
+      if (subscriber?.peerConnection) {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        stream.getTracks().forEach(track => subscriber.peerConnection?.addTrack(track, stream))
+
+        subscriber.peerConnection.ontrack = (event) => {
+          if (event.track.kind === 'audio') {
+            return
+          }
+
+          let el: HTMLVideoElement = document.createElement(event.track.kind)
+          el.srcObject = event.streams[0]
+          el.autoplay = true
+          el.controls = true
+          document.getElementById('remoteVideos').appendChild(el)
+
+          event.track.onmute = function(event) {
+            el.play()
+          }
+
+          event.streams[0].onremovetrack = ({ track }) => {
+            if (el.parentNode) {
+              el.parentNode.removeChild(el)
+            }
+          }
+
+        }
+      }
+    }
+    )()
+  }, [])
 
   return {
     subscribe
@@ -414,6 +459,10 @@ function App() {
     <>
       <Main />
       <div>
+        <h3> Remote Video </h3>
+        <div id="remoteVideos"></div> <br />
+
+
         <button onClick={subscribe}>Subscribe</button>
 
         <a href="https://vitejs.dev" target="_blank">
