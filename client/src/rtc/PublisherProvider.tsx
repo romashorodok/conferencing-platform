@@ -7,12 +7,12 @@ type PeerConnectionContextType = {
 
 export const PeerConnectionContext = createContext<PeerConnectionContextType>(undefined as never)
 
-function PeerConnectionProvider({ children }: PropsWithChildren<{}>) {
+function PublisherProvider({ children }: PropsWithChildren<{}>) {
   const [peerConnection, setPeerConnection] = useState<RTCPeerConnection>(undefined as never)
 
   useEffect(() => {
     if (!peerConnection) {
-      setPeerConnection(new RTCPeerConnection())
+      // setPeerConnection(new RTCPeerConnection())
     }
 
     return () => {
@@ -29,4 +29,4 @@ function PeerConnectionProvider({ children }: PropsWithChildren<{}>) {
   )
 }
 
-export default PeerConnectionProvider;
+export default PublisherProvider;

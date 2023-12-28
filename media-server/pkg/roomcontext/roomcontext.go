@@ -2,7 +2,6 @@ package roomcontext
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"log/slog"
 	"sync"
@@ -229,6 +228,7 @@ func (r *roomContext) signalPeerConnections() {
 
 	trackLocals := r.sfu.TrackLocalList
 
+	log.Println("track locals", trackLocals)
 	attemptSync := func() (tryAgain bool) {
 		for i := range peerConnections {
 			if peerConnections[i].peerConnection.ConnectionState() == webrtc.PeerConnectionStateClosed {
@@ -253,7 +253,7 @@ func (r *roomContext) signalPeerConnections() {
 					}
 				}
 			}
-			log.Println(peerConnections[i].peerConnection.GetReceivers())
+			// log.Println(peerConnections[i].peerConnection.GetReceivers())
 
 			// Don't receive videos we are sending, make sure we don't have loopback
 			for _, receiver := range peerConnections[i].peerConnection.GetReceivers() {
@@ -274,29 +274,32 @@ func (r *roomContext) signalPeerConnections() {
 			}
 			log.Println(existingSenders)
 
-			offer, err := peerConnections[i].peerConnection.CreateOffer(nil)
-			if err != nil {
-				return true
-			}
+            <-webrtc.GatheringCompletePromise( peerConnections[i].peerConnection)
 
-			if err = peerConnections[i].peerConnection.SetLocalDescription(offer); err != nil {
-				log.Println(err)
-				return true
-			}
+			// offer, err := peerConnections[i].peerConnection.CreateAnswer(nil)
+			// if err != nil {
+			// 	log.Println(err)
+			// 	return true
+			// }
 
-			offerString, err := json.Marshal(offer)
-			if err != nil {
-				return true
-			}
+			// if err = peerConnections[i].peerConnection.SetLocalDescription(offer); err != nil {
+			// 	log.Println(err)
+			// 	return true
+			// }
 
-			signaling, err := peerConnections[i].peerContext.GetSignalingChannel()
-			if err != nil || signaling == nil {
-				log.Println("Signaling data channel empty")
-				return true
-			}
-			if err = signaling.SendText(string(offerString)); err != nil {
-				return true
-			}
+			// offerString, err := json.Marshal(offer)
+			// if err != nil {
+			// 	return true
+			// }
+			//
+			// signaling, err := peerConnections[i].peerContext.GetSignalingChannel()
+			// if err != nil || signaling == nil {
+			// 	log.Println("Signaling data channel empty")
+			// 	return true
+			// }
+			// if err = signaling.SendText(string(offerString)); err != nil {
+			// 	return true
+			// }
 
 			// if err = peerConnections[i].signaling.SendText(string(offerString)); err != nil {
 			// 	return true
@@ -364,6 +367,11 @@ func (r *roomContext) AddParticipant(offer string) (protocol.PeerContext, error)
 
 			// signaling:      signaling,
 		})
+
+    peerConnection := peerContext.GetPeerConnection()
+    peerConnection.OnICECandidate(func(candidate *webrtc.ICECandidate){
+        log.Println("For", peerID, "ICE candidate fire", candidate)
+    })
 
 	return peerContext, nil
 }

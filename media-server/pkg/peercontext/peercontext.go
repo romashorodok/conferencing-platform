@@ -2,6 +2,7 @@ package peercontext
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"log/slog"
@@ -15,8 +16,9 @@ type peerContext struct {
 	api    *webrtc.API
 	logger *slog.Logger
 
-	peerID               string
-	peerConnection       *webrtc.PeerConnection
+	peerID         string
+	peerConnection *webrtc.PeerConnection
+	// Must be used only for sending offers and recv answers
 	peerSignalingChannel *webrtc.DataChannel
 	sfu                  *sfu.SelectiveForwardingUnit
 
@@ -43,42 +45,63 @@ func (p *peerContext) Info() *protocol.PeerInfo {
 	}
 }
 
+type localPeerAnswer struct {
+	Type string
+	Sdp  string
+}
+
 func (p *peerContext) setupSignalingChannel(dc *webrtc.DataChannel) {
 	if protocol.PeerSignalingChannelLabel != dc.Label() {
 		return
 	}
 	p.peerSignalingChannel = dc
 	log.Println("set signaling channel")
+
+	dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+		var answer localPeerAnswer
+		json.Unmarshal(msg.Data, &answer)
+
+		desc := webrtc.SessionDescription{
+			Type: webrtc.SDPTypeAnswer,
+			SDP:  answer.Sdp,
+		}
+
+		if err := p.peerConnection.SetLocalDescription(desc); err != nil {
+			log.Println("Unable set answer", err)
+			return
+		}
+		log.Println("Success answer set")
+	})
 }
 
 func (p *peerContext) OnDataChannel() {
 	p.peerConnection.OnDataChannel(func(dc *webrtc.DataChannel) {
-		stats, ok := p.peerConnection.GetStats().GetDataChannelStats(dc)
-		if !ok {
-			slog.Error(fmt.Sprintf("unable get data_channel stats for %s:%s", dc.Label(), dc.ID()))
-			_ = dc.Close()
-			return
-		}
+		// stats, ok := p.peerConnection.GetStats().GetDataChannelStats(dc)
+		// if !ok {
+		// 	slog.Error(fmt.Sprintf("unable get data_channel stats for %s:%s", dc.Label(), dc.ID()))
+		// 	_ = dc.Close()
+		// 	return
+		// }
 		p.setupSignalingChannel(dc)
 
-		logger := p.logger.With(
-			slog.Group("data_channel",
-				slog.String("stats.ID:", stats.ID),
+		// logger := p.logger.With(
+		// 	slog.Group("data_channel",
+		// 		slog.String("stats.ID:", stats.ID),
+		//
+		// 		slog.Int("dc.ID", int(*dc.ID())),
+		// 		slog.String("dc.label", dc.Label()),
+		// 	),
+		// )
 
-				slog.Int("dc.ID", int(*dc.ID())),
-				slog.String("dc.label", dc.Label()),
-			),
-		)
+		// logger.Debug("OnDataChannel connect.")
 
-		logger.Debug("OnDataChannel connect.")
-
-		dc.OnOpen(func() {
-			logger.Debug("OnDataChannel OnOpen")
-		})
-
-		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-			logger.Debug(fmt.Sprintf("OnDataChannel OnMessage: %s", msg.Data))
-		})
+		// dc.OnOpen(func() {
+		// 	logger.Debug("OnDataChannel OnOpen")
+		// })
+		//
+		// dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+		// 	logger.Debug(fmt.Sprintf("OnDataChannel OnMessage: %s", msg.Data))
+		// })
 	})
 }
 

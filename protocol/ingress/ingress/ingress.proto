@@ -71,7 +71,17 @@ service WebrtcHttpIngestionController {
       delete: "/ingress/whip/session/{sessionID}";
     };
   }
+
+  rpc WebsocketRtcSignal(WebsocketSignalRequest) returns (WebsocketSignalResponse) {
+    option(google.api.http) = {
+      get: "/ws-rtc-signal";
+      body: "*";
+    };
+  }
 }
+
+message WebsocketSignalRequest {} 
+message WebsocketSignalResponse {} 
 
 message SessionDescription {
   string type = 1; // "answer" | "offer" 
