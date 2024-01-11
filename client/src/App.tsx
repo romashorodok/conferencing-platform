@@ -206,7 +206,9 @@ function useSubscriber() {
 
   const subscribe = useCallback(async () => {
     await signal.onConnect.wait
-    signal.subscribe()
+    if (subscriber.peerConnection?.connectionState !== 'connected') {
+      signal.subscribe()
+    }
   }, [signal, negotiation])
 
   useEffect(() => {
