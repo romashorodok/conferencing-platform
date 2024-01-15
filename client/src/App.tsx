@@ -187,7 +187,8 @@ function useSubscriber() {
       try {
         subscriber.addIceCandidate(new RTCIceCandidate(JSON.parse(iceCandidate)))
       } finally {
-        signal.off(SignalEvent.TrickleIceCandidate, onTrickleIceCandidate)
+        // removeListener
+        signal.removeListener(SignalEvent.TrickleIceCandidate, onTrickleIceCandidate)
       }
     })
 
@@ -220,12 +221,12 @@ function useSubscriber() {
         console.log(err)
       }
       // finally {
-      //   signal.off(SignalEvent.Offer, onOffer)
+      //   signal.removeListener(SignalEvent.Offer, onOffer)
       // }
     }
     signal.on(SignalEvent.Offer, onOffer)
     return () => {
-      signal.off(SignalEvent.Offer, onOffer)
+      signal.removeListener(SignalEvent.Offer, onOffer)
     }
   }, [signal, negotiation])
 
@@ -237,6 +238,7 @@ function useSubscriber() {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
         stream.getTracks().forEach(track => subscriber.peerConnection?.addTrack(track, stream))
 
+
         subscriber.peerConnection.ontrack = (event) => {
           if (event.track.kind === 'audio') {
             return
@@ -244,6 +246,10 @@ function useSubscriber() {
 
           let el: HTMLVideoElement = document.createElement(event.track.kind)
           el.srcObject = event.streams[0]
+          event.streams[0].addEventListener('removetrack', function(evt) {
+            console.log("remove track stream end", evt)
+          })
+
           el.autoplay = true
           el.controls = true
           document.getElementById('remoteVideos').appendChild(el)
@@ -251,8 +257,12 @@ function useSubscriber() {
           event.track.onmute = function(event) {
             el.play()
           }
+          event.track.onended = function(evt) {
+            console.log("Stream ended", evt)
+          }
 
-          event.streams[0].onremovetrack = ({ track }) => {
+          event.streams[0].onremovetrack = (evt) => {
+            console.log("stream", evt)
             if (el.parentNode) {
               el.parentNode.removeChild(el)
             }

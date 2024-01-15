@@ -17,6 +17,7 @@ import (
 	"github.com/gorilla/websocket"
 	echo "github.com/labstack/echo/v4"
 	"github.com/pion/rtcp"
+	"github.com/pion/rtp"
 	webrtc "github.com/pion/webrtc/v3"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/protocol"
 	"github.com/romashorodok/conferencing-platform/pkg/controller/ingress"
@@ -109,10 +110,8 @@ func NewPublisher(peerConnection *webrtc.PeerConnection) (*Publisher, error) {
 }
 
 type PeerContext struct {
-	// publisher  *webrtc.PeerConnection
-	publisher  *Publisher
-	subscriber *Subscriber
-	// subscriber          *webrtc.PeerConnection
+	publisher           *Publisher
+	subscriber          *Subscriber
 	negotiationDataChan *webrtc.DataChannel
 }
 
@@ -121,17 +120,26 @@ type SdpDescription struct {
 	Sdp  string `json:"sdp"`
 }
 
+type TrackContextWritable interface {
+	WriteRTP(p *rtp.Packet) error
+}
+
 type TrackContext struct {
 	track  *webrtc.TrackLocalStaticRTP
 	sender *webrtc.RTPSender
 }
 
+func (t *TrackContext) WriteRTP(p *rtp.Packet) error {
+	return t.track.WriteRTP(p)
+}
+
 func (t *TrackContext) Close() (err error) {
-	err = t.sender.Stop()
-	err = t.sender.Transport().Stop()
 	err = t.sender.ReplaceTrack(nil)
+	err = t.sender.Stop()
 	return
 }
+
+var _ TrackContextWritable = (*TrackContext)(nil)
 
 type LoopbackTrackContext struct {
 	TrackContext
@@ -157,17 +165,13 @@ func (s *Subscriber) Close() (err error) {
 
 	for id, t := range s.tracks {
 		err = t.Close()
-		log.Println("close track error", err)
 		err = s.peerConnection.RemoveTrack(t.sender)
-		log.Println("remove track error", err)
 		delete(s.tracks, id)
 	}
 
 	for id, t := range s.loopback {
 		err = t.Close()
-		log.Println("close track error", err)
 		err = s.peerConnection.RemoveTrack(t.sender)
-		log.Println("remove track error", err)
 		delete(s.loopback, id)
 	}
 
@@ -177,6 +181,7 @@ func (s *Subscriber) Close() (err error) {
 func (s *Subscriber) HasTrack(trackID string) (*TrackContext, bool) {
 	s.tracksMu.Lock()
 	defer s.tracksMu.Unlock()
+
 	track, exist := s.tracks[trackID]
 	return track, exist
 }
@@ -211,30 +216,37 @@ func (s *Subscriber) CreateTrack(t *webrtc.TrackRemote) (*TrackContext, error) {
 	return trackContext, nil
 }
 
-func (s *Subscriber) DeleteTrack(trackID string) error {
+func (s *Subscriber) DeleteTrack(trackID string) (err error) {
 	s.tracksMu.Lock()
 	defer s.tracksMu.Unlock()
-	if _, exist := s.tracks[trackID]; !exist {
+
+	track, exist := s.tracks[trackID]
+	if !exist {
 		return errors.New("Track not exist. Unable delete")
 	}
+	err = track.Close()
+
 	delete(s.tracks, trackID)
-	return nil
+	return err
 }
 
-func (s *Subscriber) LoopbackTrack(id string, sid string, capability webrtc.RTPCodecCapability) error {
+func (s *Subscriber) LoopbackTrack(id string, sid string, capability webrtc.RTPCodecCapability) (*LoopbackTrackContext, error) {
 	track, err := webrtc.NewTrackLocalStaticRTP(capability, id, sid)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	transceiver, err := s.peerConnection.AddTransceiverFromTrack(track, webrtc.RTPTransceiverInit{
 		// Recvonly not supported
-		Direction: webrtc.RTPTransceiverDirectionSendrecv,
+		Direction: webrtc.RTPTransceiverDirectionSendonly,
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
-	// Disable loopback
+
+	// NOTE: When new negotiation will be it's will be displayed as video
+	// NOTE: To mute track need `webrtc.RTPTransceiverDirectionInactive`
+	// Disable loopback sending, or may even replace the track
 	// transceiver.SetSender(transceiver.Sender(), nil)
 
 	s.loopback[id] = &LoopbackTrackContext{
@@ -244,7 +256,12 @@ func (s *Subscriber) LoopbackTrack(id string, sid string, capability webrtc.RTPC
 		},
 		transceiver: transceiver,
 	}
-	return nil
+	return s.loopback[id], nil
+}
+
+func (s *Subscriber) GetLoopbackTrack(trackID string) (track *LoopbackTrackContext, exist bool) {
+	track, exist = s.loopback[trackID]
+	return
 }
 
 func NewSubscriber(peerConnection *webrtc.PeerConnection) (*Subscriber, error) {
@@ -258,8 +275,7 @@ func NewSubscriber(peerConnection *webrtc.PeerConnection) (*Subscriber, error) {
 
 type SubscriberPool struct {
 	subscriberMu sync.Mutex
-
-	pool map[string]*Subscriber
+	pool         map[string]*Subscriber
 }
 
 func (s *SubscriberPool) Get() []*Subscriber {
@@ -270,6 +286,7 @@ func (s *SubscriberPool) Get() []*Subscriber {
 	for _, sub := range s.pool {
 		result = append(result, sub)
 	}
+
 	return result
 }
 
@@ -285,16 +302,20 @@ func (s *SubscriberPool) Add(sub *Subscriber) error {
 	return nil
 }
 
-func (s *SubscriberPool) Remove(sub *Subscriber) {
+func (s *SubscriberPool) Remove(sub *Subscriber) (err error) {
 	s.subscriberMu.Lock()
 	defer s.subscriberMu.Unlock()
+
 	if sub == nil {
 		return
 	}
+
 	if s, exist := s.pool[sub.id]; exist {
-		_ = s.Close()
+		err = s.Close()
 	}
+
 	delete(s.pool, sub.id)
+	return err
 }
 
 func NewSubscriberPool() *SubscriberPool {
@@ -309,6 +330,8 @@ type SdpAnswer struct {
 	Type string `json:"type"`
 	Sdp  string `json:"sdp"`
 }
+
+var ErrOnStateClosed error = errors.New("Closed connection")
 
 func (ctrl *whipController) WebrtcHttpIngestionControllerWebsocketRtcSignal(ctx echo.Context) error {
 	conn, err := upgrader.Upgrade(ctx.Response().Writer, ctx.Request(), nil)
@@ -333,13 +356,18 @@ func (ctrl *whipController) WebrtcHttpIngestionControllerWebsocketRtcSignal(ctx 
 		return err
 	}
 
-	subscriberConnCtx, subscriberConnCtxCancel := context.WithCancelCause(context.TODO())
-	subscriber, _ := NewSubscriber(peerConnection)
-	subscriberPool.Add(subscriber)
-	defer subscriberPool.Remove(peerContext.subscriber)
-	defer subscriberConnCtxCancel(errors.New("Defer implicit connection close"))
-
+	subscriberConnCtx, subscriberConnCtxCancel := context.WithCancelCause(ctx.Request().Context())
+	_ = subscriberConnCtx
+	subscriber, err := NewSubscriber(peerConnection)
+	if err != nil {
+		log.Println("NewSubscriber error")
+		return err
+	}
 	peerContext.subscriber = subscriber
+	subscriberPool.Add(subscriber)
+
+	defer subscriberConnCtxCancel(errors.New("Defer implicit connection close"))
+	defer subscriberPool.Remove(peerContext.subscriber)
 
 	// Declare publisher transceiver for all kinds
 	for _, typ := range []webrtc.RTPCodecType{webrtc.RTPCodecTypeVideo, webrtc.RTPCodecTypeAudio} {
@@ -370,22 +398,6 @@ func (ctrl *whipController) WebrtcHttpIngestionControllerWebsocketRtcSignal(ctx 
 	})
 
 	peerContext.subscriber.peerConnection.OnTrack(func(t *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
-		// Create a track to fan out our incoming video to all peers
-		// trackLocal := addTrack(t)
-		// defer removeTrack(trackLocal)
-		//
-		// buf := make([]byte, 1500)
-		// for {
-		// 	i, _, err := t.Read(buf)
-		// 	if err != nil {
-		// 		return
-		// 	}
-		//
-		// 	if _, err = trackLocal.Write(buf[:i]); err != nil {
-		// 		return
-		// 	}
-		// }
-
 		defer func() {
 			for _, subs := range subscriberPool.Get() {
 				_ = subs.DeleteTrack(t.ID())
@@ -420,18 +432,37 @@ func (ctrl *whipController) WebrtcHttpIngestionControllerWebsocketRtcSignal(ctx 
 				default:
 				}
 
-				track, exist := sub.HasTrack(t.ID())
-				if !exist {
-					// If subscriber is done remove subscriber
-					track, err = sub.CreateTrack(t)
-					if err != nil {
-						return
+				var track TrackContextWritable
+				var exist bool
+				var err error
+
+				switch {
+				case subscriber.id == sub.id:
+					track, exist = sub.GetLoopbackTrack(t.ID())
+					if !exist {
+						track, err = sub.LoopbackTrack(t.ID(), t.StreamID(), t.Codec().RTPCodecCapability)
+						break
 					}
-					signalPeerConnections()
+					// TODO: if I will send stub track I need do this too
+					// loopback.sender.ReplaceTrack(track webrtc.TrackLocal)
+				default:
+					track, exist = sub.HasTrack(t.ID())
+					if !exist {
+						track, err = sub.CreateTrack(t)
+					}
+				}
+
+				if err == nil && !exist {
+					// 	// TODO: need try do it by https://github.com/pion/webrtc/blob/v3.2.24/peerconnection.go#L290
+					go signalPeerConnections()
+				}
+
+				if track == nil {
+					return
 				}
 
 				// WriteRTP takes about 50µs
-				track.track.WriteRTP(pkt)
+				track.WriteRTP(pkt)
 			})
 		}
 	})
@@ -439,21 +470,25 @@ func (ctrl *whipController) WebrtcHttpIngestionControllerWebsocketRtcSignal(ctx 
 	peerContext.subscriber.peerConnection.OnConnectionStateChange(func(p webrtc.PeerConnectionState) {
 		switch p {
 		case webrtc.PeerConnectionStateFailed:
+			subscriberConnCtxCancel(ErrOnStateClosed)
 			if err := peerContext.subscriber.peerConnection.Close(); err != nil {
 				log.Print(err)
 			}
 		case webrtc.PeerConnectionStateClosed:
+			subscriberConnCtxCancel(ErrOnStateClosed)
 			signalPeerConnections()
 		}
 	})
 
 	listLock.Lock()
-	peerConnections = append(peerConnections, &peerConnectionState{
+	state := &peerConnectionState{
 		peerContext:    peerContext,
 		peerConnection: peerConnection,
 		signaling:      &webrtc.DataChannel{},
 		ws:             w,
-	})
+	}
+	peerConnections[peerContext.subscriber.id] = state
+	defer delete(peerConnections, peerContext.subscriber.id)
 	listLock.Unlock()
 
 	message := &websocketMessage{}
@@ -466,6 +501,7 @@ func (ctrl *whipController) WebrtcHttpIngestionControllerWebsocketRtcSignal(ctx 
 			})
 			return err
 		}
+
 		switch message.Event {
 		case "offer":
 			// The offer must send a publisher peer
@@ -493,22 +529,6 @@ func (ctrl *whipController) WebrtcHttpIngestionControllerWebsocketRtcSignal(ctx 
 
 		case "subscribe":
 			{
-				sid := uuid.NewString()
-
-				if err = subscriber.LoopbackTrack(uuid.NewString(), sid, webrtc.RTPCodecCapability{
-					MimeType: webrtc.MimeTypeVP8,
-				}); err != nil {
-					log.Println(err)
-					return err
-				}
-
-				if err = subscriber.LoopbackTrack(uuid.NewString(), sid, webrtc.RTPCodecCapability{
-					MimeType: webrtc.MimeTypeOpus,
-				}); err != nil {
-					log.Println(err)
-					return err
-				}
-
 				dc, err := subscriber.peerConnection.CreateDataChannel("_negotiation", nil)
 				if err != nil {
 					log.Println(err)
@@ -553,7 +573,7 @@ const (
 
 var (
 	listLock        sync.RWMutex
-	peerConnections []*peerConnectionState
+	peerConnections = make(map[string]*peerConnectionState)
 	trackLocals     = make(map[string]*webrtc.TrackLocalStaticRTP)
 )
 
@@ -606,6 +626,8 @@ func signalPeerConnections() {
 			if conn.peerContext.subscriber.peerConnection.ConnectionState() == webrtc.PeerConnectionStateClosed {
 				continue
 			}
+
+			log.Println("current stack", peerConnections)
 
 			// existingSenders := map[string]bool{}
 
