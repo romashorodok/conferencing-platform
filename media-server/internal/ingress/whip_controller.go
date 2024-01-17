@@ -99,18 +99,7 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
-type Publisher struct {
-	peerConnection *webrtc.PeerConnection
-}
-
-func NewPublisher(peerConnection *webrtc.PeerConnection) (*Publisher, error) {
-	return &Publisher{
-		peerConnection: peerConnection,
-	}, nil
-}
-
 type PeerContext struct {
-	publisher           *Publisher
 	subscriber          *Subscriber
 	negotiationDataChan *webrtc.DataChannel
 }
@@ -503,6 +492,18 @@ func (ctrl *whipController) WebrtcHttpIngestionControllerWebsocketRtcSignal(ctx 
 		}
 
 		switch message.Event {
+		case "candidate":
+			{
+				candidate := webrtc.ICECandidateInit{}
+				if err := json.Unmarshal([]byte(message.Data), &candidate); err != nil {
+					log.Println("Wrong ice candidate format", err)
+					return err
+				}
+				if err := subscriber.peerConnection.AddICECandidate(candidate); err != nil {
+					log.Println("Uanble add ice candidate", err)
+					return err
+				}
+			}
 		case "offer":
 			// The offer must send a publisher peer
 			{

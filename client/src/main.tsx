@@ -3,12 +3,15 @@ import App from './App.tsx'
 import './index.css'
 import SignalContextProvider from './rtc/SignalProvider.tsx'
 import SubscriberContextProvider from './rtc/SubscriberProvider.tsx'
+import MediaStreamProvider from './rtc/MediaStreamProvider.tsx'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <SignalContextProvider>
-    <SubscriberContextProvider>
-      <App />
-    </SubscriberContextProvider>
+    <MediaStreamProvider>
+      <SubscriberContextProvider>
+        <App />
+      </SubscriberContextProvider>
+    </MediaStreamProvider>
   </SignalContextProvider>
 )
 
