@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	echo "github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/variables"
 	"github.com/romashorodok/conferencing-platform/pkg/protocol"
 	"go.uber.org/fx"
@@ -27,6 +28,7 @@ func httpErrorHandler(e *echo.Echo, logger *slog.Logger) func(err error, c echo.
 func httpServer(params httpServer_Params) {
 	router := echo.New()
 	router.HTTPErrorHandler = httpErrorHandler(router, params.Logger)
+    router.Use(middleware.CORS())
 
 	for _, controller := range params.Controllers {
 		controller.Resolve(router)

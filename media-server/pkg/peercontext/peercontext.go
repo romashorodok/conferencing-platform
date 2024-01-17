@@ -2,21 +2,40 @@ package peercontext
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 	"log/slog"
 
-	webrtc "github.com/pion/webrtc/v4"
+	webrtc "github.com/pion/webrtc/v3"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/protocol"
+	"github.com/romashorodok/conferencing-platform/media-server/pkg/sfu"
 )
 
 type peerContext struct {
-	api            *webrtc.API
-	logger         *slog.Logger
-	peerConnection *webrtc.PeerConnection
+	api    *webrtc.API
+	logger *slog.Logger
+
 	peerID         string
+	peerConnection *webrtc.PeerConnection
+	// Must be used only for sending offers and recv answers
+	peerSignalingChannel *webrtc.DataChannel
+	sfu                  *sfu.SelectiveForwardingUnit
 
 	ctx    context.Context
 	cancel context.CancelCauseFunc
+}
+
+func (p *peerContext) GetSignalingChannel() (*webrtc.DataChannel, error) {
+	if p.peerSignalingChannel == nil {
+		return nil, protocol.ErrPeerSignalingChannelNotFound
+	}
+	log.Println("signaling function", p.peerSignalingChannel)
+	return p.peerSignalingChannel, nil
+}
+
+func (p *peerContext) GetPeerConnection() *webrtc.PeerConnection {
+	return p.peerConnection
 }
 
 func (p *peerContext) Info() *protocol.PeerInfo {
@@ -26,18 +45,98 @@ func (p *peerContext) Info() *protocol.PeerInfo {
 	}
 }
 
-func (p *peerContext) OnDataChannel() {
-	p.peerConnection.OnDataChannel(func(d *webrtc.DataChannel) {
-		fmt.Printf("New DataChannel %s %d\n", d.Label(), d.ID())
+type localPeerAnswer struct {
+	Type string
+	Sdp  string
+}
 
-		d.OnOpen(func() {
-			fmt.Printf("Data channel '%s'-'%d' open.", d.Label(), d.ID())
-		})
+func (p *peerContext) setupSignalingChannel(dc *webrtc.DataChannel) {
+	if protocol.PeerSignalingChannelLabel != dc.Label() {
+		return
+	}
+	p.peerSignalingChannel = dc
+	log.Println("set signaling channel")
 
-		d.OnMessage(func(msg webrtc.DataChannelMessage) {
-			fmt.Printf("Message from DataChannel '%s': '%s'\n", d.Label(), string(msg.Data))
-		})
+	dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+		var answer localPeerAnswer
+		json.Unmarshal(msg.Data, &answer)
+
+		desc := webrtc.SessionDescription{
+			Type: webrtc.SDPTypeAnswer,
+			SDP:  answer.Sdp,
+		}
+
+		if err := p.peerConnection.SetLocalDescription(desc); err != nil {
+			log.Println("Unable set answer", err)
+			return
+		}
+		log.Println("Success answer set")
 	})
+}
+
+func (p *peerContext) OnDataChannel() {
+	p.peerConnection.OnDataChannel(func(dc *webrtc.DataChannel) {
+		// stats, ok := p.peerConnection.GetStats().GetDataChannelStats(dc)
+		// if !ok {
+		// 	slog.Error(fmt.Sprintf("unable get data_channel stats for %s:%s", dc.Label(), dc.ID()))
+		// 	_ = dc.Close()
+		// 	return
+		// }
+		p.setupSignalingChannel(dc)
+
+		// logger := p.logger.With(
+		// 	slog.Group("data_channel",
+		// 		slog.String("stats.ID:", stats.ID),
+		//
+		// 		slog.Int("dc.ID", int(*dc.ID())),
+		// 		slog.String("dc.label", dc.Label()),
+		// 	),
+		// )
+
+		// logger.Debug("OnDataChannel connect.")
+
+		// dc.OnOpen(func() {
+		// 	logger.Debug("OnDataChannel OnOpen")
+		// })
+		//
+		// dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+		// 	logger.Debug(fmt.Sprintf("OnDataChannel OnMessage: %s", msg.Data))
+		// })
+	})
+}
+
+func (p *peerContext) OnTrack(signaling func()) {
+	p.peerConnection.OnTrack(func(track *webrtc.TrackRemote, recv *webrtc.RTPReceiver) {
+		localTrack, err := p.sfu.AddTrack(track)
+		if err != nil {
+			p.logger.Error(fmt.Sprint("Failed add track to the sfu", err))
+			return
+		}
+		defer p.sfu.RemoveTrack(localTrack)
+		signaling()
+
+		for {
+			rtp, _, err := track.ReadRTP()
+			if err != nil {
+				log.Println("read error", err)
+				return
+			}
+
+			if err = localTrack.WriteRTP(rtp); err != nil {
+				return
+			}
+		}
+	})
+}
+
+func (p *peerContext) OnCandidate() {
+	p.peerConnection.OnICECandidate(
+		func(candidate *webrtc.ICECandidate) {
+			if candidate != nil {
+				p.logger.Debug(fmt.Sprintf("On ICE candidate: %+v", candidate))
+			}
+		},
+	)
 }
 
 // The offer must contain at least 1 ice-ufrag. If the offer does not contain media, it return an error.
@@ -77,9 +176,12 @@ func (p *peerContext) Cancel(reason error) {
 	p.cancel(reason)
 }
 
+var _ protocol.PeerContext = (*peerContext)(nil)
+
 type NewPeerContext_Params struct {
 	API           *webrtc.API
 	Logger        *slog.Logger
+	SFU           *sfu.SelectiveForwardingUnit
 	ParentContext context.Context
 	PeerID        string
 }
@@ -93,9 +195,10 @@ func NewPeerContext(params NewPeerContext_Params) (*peerContext, error) {
 	}
 
 	return &peerContext{
-		peerConnection: peerConnection,
 		api:            params.API,
 		logger:         params.Logger,
+		peerConnection: peerConnection,
+		sfu:            params.SFU,
 		peerID:         params.PeerID,
 		ctx:            ctx,
 		cancel:         cancel,

@@ -37,8 +37,17 @@ type WebrtcHttpIngestResponse struct {
 // WebrtcHttpTerminateResponse defines model for WebrtcHttpTerminateResponse.
 type WebrtcHttpTerminateResponse = map[string]interface{}
 
+// WebsocketSignalRequest defines model for WebsocketSignalRequest.
+type WebsocketSignalRequest = map[string]interface{}
+
+// WebsocketSignalResponse defines model for WebsocketSignalResponse.
+type WebsocketSignalResponse = map[string]interface{}
+
 // WebrtcHttpIngestionControllerWebrtcHttpIngestJSONRequestBody defines body for WebrtcHttpIngestionControllerWebrtcHttpIngest for application/json ContentType.
 type WebrtcHttpIngestionControllerWebrtcHttpIngestJSONRequestBody = WebrtcHttpIngestRequest
+
+// WebrtcHttpIngestionControllerWebsocketRtcSignalJSONRequestBody defines body for WebrtcHttpIngestionControllerWebsocketRtcSignal for application/json ContentType.
+type WebrtcHttpIngestionControllerWebsocketRtcSignalJSONRequestBody = WebsocketSignalRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -48,6 +57,9 @@ type ServerInterface interface {
 
 	// (POST /ingress/whip/session/{sessionID})
 	WebrtcHttpIngestionControllerWebrtcHttpIngest(ctx echo.Context, sessionID string) error
+
+	// (GET /ws-rtc-signal)
+	WebrtcHttpIngestionControllerWebsocketRtcSignal(ctx echo.Context) error
 }
 
 // ServerInterfaceWrapper converts echo contexts to parameters.
@@ -87,6 +99,15 @@ func (w *ServerInterfaceWrapper) WebrtcHttpIngestionControllerWebrtcHttpIngest(c
 	return err
 }
 
+// WebrtcHttpIngestionControllerWebsocketRtcSignal converts echo context to params.
+func (w *ServerInterfaceWrapper) WebrtcHttpIngestionControllerWebsocketRtcSignal(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.WebrtcHttpIngestionControllerWebsocketRtcSignal(ctx)
+	return err
+}
+
 // This is a simple interface which specifies echo.Route addition functions which
 // are present on both echo.Echo and echo.Group, since we want to allow using
 // either of them for path registration
@@ -117,29 +138,31 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 
 	router.DELETE(baseURL+"/ingress/whip/session/:sessionID", wrapper.WebrtcHttpIngestionControllerWebrtcHttpTerminate)
 	router.POST(baseURL+"/ingress/whip/session/:sessionID", wrapper.WebrtcHttpIngestionControllerWebrtcHttpIngest)
+	router.GET(baseURL+"/ws-rtc-signal", wrapper.WebrtcHttpIngestionControllerWebsocketRtcSignal)
 
 }
 
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

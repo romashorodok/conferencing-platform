@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
-	webrtc "github.com/pion/webrtc/v4"
+	webrtc "github.com/pion/webrtc/v3"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/protocol"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/roomcontext"
 	"github.com/romashorodok/conferencing-platform/pkg/controller/room"

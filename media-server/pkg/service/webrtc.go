@@ -5,7 +5,7 @@ import (
 
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/intervalpli"
-	webrtc "github.com/pion/webrtc/v4"
+	webrtc "github.com/pion/webrtc/v3"
 	"go.uber.org/fx"
 )
 
