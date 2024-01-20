@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { Dispatch, PropsWithChildren, Reducer, useCallback, useContext, useEffect, useReducer, useRef, useState } from 'react'
 import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
 import cameraSvg from './assets/camera.svg'
@@ -9,6 +9,9 @@ import { SignalContext } from './rtc/SignalProvider'
 import { EventEmitter } from 'events';
 import { SubscriberContext } from './rtc/SubscriberProvider'
 import { MediaStreamContext } from './rtc/MediaStreamProvider'
+import * as Popover from '@radix-ui/react-popover';
+import * as ScrollArea from '@radix-ui/react-scroll-area';
+import LoadingDots from './base/loading-dots'
 
 export class Mutex {
   wait: Promise<void>;
@@ -175,7 +178,11 @@ export class Signal extends EventEmitter {
   }
 }
 
-function useSubscriber() {
+function useSubscriber({
+  setMediaStream
+}: {
+  setMediaStream: Dispatch<SetMediaStreamAction>
+}) {
   const { subscriber } = useContext(SubscriberContext)
   const { signal } = useContext(SignalContext)
 
@@ -243,35 +250,43 @@ function useSubscriber() {
 
 
   useEffect(() => {
-    subscriber.peerConnection!.ontrack = (event) => {
-      if (event.track.kind === 'audio') {
+    subscriber.peerConnection!.ontrack = (evt) => {
+      if (evt.track.kind === 'audio') {
         return
       }
 
       // @ts-ignore
-      const el: HTMLVideoElement = document.createElement(event.track.kind)
-      el.srcObject = event.streams[0]
-      event.streams[0].addEventListener('removetrack', function(evt) {
-        console.log("remove track stream end", evt)
-      })
+      const el: HTMLVideoElement = document.createElement(evt.track.kind)
+      const [stream] = evt.streams
 
-      el.autoplay = true
-      el.controls = true
-      document.getElementById('remoteVideos')!.appendChild(el)
+      setMediaStream({ [stream.id]: stream })
 
-      event.track.onmute = function() {
-        el.play()
-      }
-      event.track.onended = function(evt) {
-        console.log("Stream ended", evt)
-      }
+      stream.onremovetrack = () => setMediaStream({ [stream.id]: undefined })
 
-      event.streams[0].onremovetrack = (evt) => {
-        console.log("stream", evt)
-        if (el.parentNode) {
-          el.parentNode.removeChild(el)
-        }
-      }
+      // el.srcObject = event.streams[0]
+      // event.streams[0].addEventListener('removetrack', function(evt) {
+      //   console.log("remove track stream end", evt)
+      // })
+      //
+      // el.autoplay = true
+      // el.controls = true
+      // document.getElementById('remoteVideos')!.appendChild(el)
+      //
+      // event.track.onmute = function() {
+      //   el.play()
+      // }
+      //
+      // event.track.onended = function(evt) {
+      //   console.log("Stream ended", evt)
+      // }
+      //
+      // event.streams[0].onremovetrack = (evt) => {
+      //   console.log("stream", evt)
+      //   if (el.parentNode) {
+      //     el.parentNode.removeChild(el)
+      //   }
+      // }
+
     }
   }, [])
 
@@ -285,10 +300,12 @@ function usePublisher() {
   const { mediaStream } = useContext(MediaStreamContext)
 
   const publish = useCallback(async () => {
-    const stream = await mediaStream
-    stream.getTracks().forEach(t => {
-      subscriber.peerConnection?.addTrack(t, stream)
-    })
+    try {
+      const stream = await mediaStream
+      stream.getTracks().forEach(t => {
+        subscriber.peerConnection?.addTrack(t, stream)
+      })
+    } catch { }
   }, [subscriber, mediaStream])
 
   useEffect(() => () => {
@@ -301,12 +318,27 @@ function usePublisher() {
 }
 
 function useRoom() {
+  const [mediaStreamList, setMediaStream] = useReducer<Reducer<MediaStreamReducerState, SetMediaStreamAction>>(
+    (state, action) => {
+      for (const [streamID, mediaStream] of Object.entries(action)) {
+        if (!mediaStream) {
+          delete state[streamID]
+          continue
+        }
+        Object.assign(state, { [streamID]: mediaStream })
+      }
+      return { ...state }
+    },
+    {}
+  )
+  const { subscribe } = useSubscriber({ setMediaStream })
   const { publish } = usePublisher()
-  const { subscribe } = useSubscriber()
 
   const join = useCallback(() => publish().then(_ => subscribe()), [publish, subscribe])
 
-  return { join }
+  useEffect(() => console.log(mediaStreamList), [mediaStreamList])
+
+  return { join, mediaStreamList }
 }
 
 function CameraComponent() {
@@ -350,18 +382,251 @@ function CameraComponent() {
             </button>
           </div>
         </div>
-        {mediaStreamReady ? null : (<p className={`absolute left-[43%] bottom-[10%] z-10`}>Loading...</p>)}
+        {mediaStreamReady
+          ? null
+          : (
+            <div className={`absolute left-[43%] bottom-[10%] z-10`} >
+              <p>Loading</p>
+              <LoadingDots absolute={false} />
+            </div>
+          )}
         <span className={`z-0 absolute bg-black w-full h-full`}></span>
       </div>
     </div>
   );
 };
 
-function App() {
-  // const { subscribe } = useSubscriber()
-  // const { publish } = usePublisher()
+function RoomParticipant({
+  mediaStream,
+  isLoading,
+}: {
+  mediaStream: MediaStream,
+  isLoading: boolean,
+}) {
+  const video = useRef<HTMLVideoElement>(null)
 
-  const { join } = useRoom()
+  useEffect(() => {
+    if (video.current) {
+      const vi = video.current
+      vi.srcObject = mediaStream
+      vi.autoplay = true
+    }
+  }, [video, mediaStream])
+
+  useEffect(() => {
+    if (!mediaStream || !video.current) return
+    const vi = video.current
+
+    const [videoTrack] = mediaStream.getVideoTracks()
+
+    videoTrack.onmute = function() {
+      vi.play()
+    }
+  }, [video, mediaStream])
+
+  return (
+    <div>
+      <div className={`flex relative w-[448px] h-[252px]`} >
+        <div className={`${isLoading ? 'invisible' : 'visible'} z-10`}>
+          <video ref={video} className={`w-[448px] h-[252px]`} />
+        </div>
+        {isLoading
+          ? (
+            <div className={`absolute left-[43%] bottom-[10%] z-10`} >
+              <p>Loading</p>
+              <LoadingDots absolute={false} />
+            </div>
+          )
+          : null}
+        <span className={`z-0 absolute bg-black w-full h-full`}></span>
+      </div>
+    </div>
+  )
+}
+
+enum StatType {
+  Codec = "codec",
+  Inbound = "inbound-rtp",
+}
+
+enum StatKind {
+  Video = "video",
+  Audio = "audio",
+}
+
+type StatObject = {
+  id: string,
+  type: string,
+  kind: string,
+  mimeType: string,
+  // At least 30 frames
+  framesDecoded: number,
+  framesReceived: number,
+}
+
+function StatByKind(statList: StatObject[]): Map<string, StatObject> {
+  const result = new Map<string, StatObject>();
+
+  for (const kindName of Object.values(StatKind)) {
+    let kindStat: StatObject = {} as StatObject;
+    for (const stat of statList) {
+      if (stat.kind !== kindName && !stat.mimeType?.includes(kindName)) {
+        continue;
+      }
+      kindStat = { ...stat, ...kindStat }
+    }
+    result.set(kindName, kindStat);
+  }
+  return result;
+}
+
+function StreamStats({
+  streamID,
+  statList,
+}: {
+  streamID: string,
+  statList: Map<string, StatObject>,
+}) {
+  return (
+    <div>
+      <p>Stream: {streamID}</p>
+      {Array.from(statList).map(([kind, stats]) => (
+        <div key={kind}>
+          <br />
+          <p>Kind: {kind}</p>
+          <br />
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(stats).map(([name, val]) =>
+                <tr key={name}>
+                  <td>{name}</td>
+                  <td>{val}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function RoomStatContainer({
+  streamID,
+  statList,
+  children,
+  show
+}: PropsWithChildren<{
+  streamID: string,
+  statList: Map<string, StatObject>,
+  show: boolean
+}>) {
+  return (
+    <div className={`absolute top-[0] left-[0] z-30`}>
+      <Popover.Root open={show}>
+        <Popover.Trigger asChild>
+          {children}
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Content className={`z-30`}>
+            <ScrollArea.Root className={`flex p-4 w-[448px] h-[252px] bg-black-t border-dimgray rounded z-30`}>
+              <ScrollArea.Viewport>
+                <StreamStats statList={statList} streamID={streamID} />
+              </ScrollArea.Viewport>
+              <ScrollArea.Scrollbar orientation="vertical">
+                <ScrollArea.Thumb />
+              </ScrollArea.Scrollbar>
+              <ScrollArea.Scrollbar orientation="horizontal">
+                <ScrollArea.Thumb />
+              </ScrollArea.Scrollbar>
+              <ScrollArea.Corner />
+            </ScrollArea.Root>
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover.Root>
+    </div>
+  )
+}
+
+function RoomStream({
+  mediaStream,
+}: { mediaStream: MediaStream }) {
+  const { subscriber } = useContext(SubscriberContext)
+  const [statList, setStatList] = useState(new Map<string, StatObject>())
+  const [showStats, setShowStats] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+
+  const getStats = useCallback(async () => {
+    const tracks = mediaStream.getTracks()
+    const stats: StatObject[] = []
+    await Promise.all(tracks.map(async track => {
+      const report = await subscriber.peerConnection?.getStats(track);
+      if (report) {
+        for (const [_, stat] of Array.from(report)) {
+          switch (stat.type) {
+            case StatType.Codec:
+            case StatType.Inbound:
+              stats.push(stat);
+              break;
+            default:
+          }
+        }
+      }
+    }));
+    setStatList(StatByKind(stats))
+  }, [subscriber, mediaStream])
+
+  useEffect(() => {
+    const intervalId = setInterval(() => getStats(), 500)
+    return () => clearInterval(intervalId)
+  }, [getStats])
+
+  useEffect(() => {
+    if (!isLoading) return
+
+    const decodedFramesCount = statList.get(StatKind.Video)?.framesDecoded
+    if (decodedFramesCount && decodedFramesCount >= 30) {
+      setIsLoading(false)
+    }
+  }, [statList])
+
+  return (
+    <div className={`relative`}>
+      <RoomParticipant mediaStream={mediaStream} isLoading={isLoading} />
+      <RoomStatContainer show={showStats} streamID={mediaStream.id} statList={statList} >
+        <button onClick={() => setShowStats(!showStats)}>Show</button>
+      </RoomStatContainer>
+    </div>
+  )
+}
+
+function Room() {
+  const { join, mediaStreamList } = useRoom()
+
+  return (
+    <div>
+      <button onClick={join}>Join</button>
+      {Object.entries(mediaStreamList).map(([id, mediaStream]) => (
+        <RoomStream key={id} mediaStream={mediaStream} />
+      ))}
+    </div>
+  )
+}
+
+type MediaStreamReducerState = { [streamID: string]: MediaStream }
+
+type SetMediaStreamAction = { [streamID: string]: MediaStream | undefined }
+
+function App() {
+
+
+  // const { join } = useRoom()
 
   const [count, setCount] = useState(0)
 
@@ -370,12 +635,11 @@ function App() {
   return (
     <>
       <CameraComponent />
+      <Room />
 
       <div>
         <h3> Remote Video </h3>
         <div id="remoteVideos"></div> <br />
-
-        <button onClick={join}>Join</button>
 
         <a href="https://vitejs.dev" target="_blank">
           <img src={viteLogo} className="logo" alt="Vite logo" />
