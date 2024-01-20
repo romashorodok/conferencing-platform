@@ -1,4 +1,4 @@
-import { Dispatch, Reducer, useCallback, useContext, useEffect, useReducer, useRef, useState } from 'react'
+import { Dispatch, PropsWithChildren, Reducer, useCallback, useContext, useEffect, useReducer, useRef, useState } from 'react'
 import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
 import cameraSvg from './assets/camera.svg'
@@ -11,6 +11,7 @@ import { SubscriberContext } from './rtc/SubscriberProvider'
 import { MediaStreamContext } from './rtc/MediaStreamProvider'
 import * as Popover from '@radix-ui/react-popover';
 import * as ScrollArea from '@radix-ui/react-scroll-area';
+import LoadingDots from './base/loading-dots'
 
 export class Mutex {
   wait: Promise<void>;
@@ -381,7 +382,14 @@ function CameraComponent() {
             </button>
           </div>
         </div>
-        {mediaStreamReady ? null : (<p className={`absolute left-[43%] bottom-[10%] z-10`}>Loading...</p>)}
+        {mediaStreamReady
+          ? null
+          : (
+            <div className={`absolute left-[43%] bottom-[10%] z-10`} >
+              <p>Loading</p>
+              <LoadingDots absolute={false} />
+            </div>
+          )}
         <span className={`z-0 absolute bg-black w-full h-full`}></span>
       </div>
     </div>
@@ -389,9 +397,11 @@ function CameraComponent() {
 };
 
 function RoomParticipant({
-  mediaStream
+  mediaStream,
+  isLoading,
 }: {
-  mediaStream: MediaStream
+  mediaStream: MediaStream,
+  isLoading: boolean,
 }) {
   const video = useRef<HTMLVideoElement>(null)
 
@@ -400,7 +410,6 @@ function RoomParticipant({
       const vi = video.current
       vi.srcObject = mediaStream
       vi.autoplay = true
-      vi.controls = true
     }
   }, [video, mediaStream])
 
@@ -408,19 +417,32 @@ function RoomParticipant({
     if (!mediaStream || !video.current) return
     const vi = video.current
 
-    const [track] = mediaStream.getVideoTracks()
-    track.onmute = function() {
+    const [videoTrack] = mediaStream.getVideoTracks()
+
+    videoTrack.onmute = function() {
       vi.play()
     }
   }, [video, mediaStream])
 
   return (
     <div>
-      <video ref={video} />
+      <div className={`flex relative w-[448px] h-[252px]`} >
+        <div className={`${isLoading ? 'invisible' : 'visible'} z-10`}>
+          <video ref={video} className={`w-[448px] h-[252px]`} />
+        </div>
+        {isLoading
+          ? (
+            <div className={`absolute left-[43%] bottom-[10%] z-10`} >
+              <p>Loading</p>
+              <LoadingDots absolute={false} />
+            </div>
+          )
+          : null}
+        <span className={`z-0 absolute bg-black w-full h-full`}></span>
+      </div>
     </div>
   )
 }
-
 
 enum StatType {
   Codec = "codec",
@@ -436,7 +458,10 @@ type StatObject = {
   id: string,
   type: string,
   kind: string,
-  mimeType: string
+  mimeType: string,
+  // At least 30 frames
+  framesDecoded: number,
+  framesReceived: number,
 }
 
 function StatByKind(statList: StatObject[]): Map<string, StatObject> {
@@ -456,51 +481,21 @@ function StatByKind(statList: StatObject[]): Map<string, StatObject> {
 }
 
 function StreamStats({
-  mediaStream
+  streamID,
+  statList,
 }: {
-  mediaStream: MediaStream
+  streamID: string,
+  statList: Map<string, StatObject>,
 }) {
-  const { subscriber } = useContext(SubscriberContext)
-  const [statList, setStatList] = useState(new Map<string, StatObject>())
-
-  const getStats = useCallback(async () => {
-    const tracks = mediaStream.getTracks()
-    const stats: StatObject[] = []
-
-    await Promise.all(tracks.map(async track => {
-      const report = await subscriber.peerConnection?.getStats(track);
-      if (report) {
-        for (const [_, stat] of Array.from(report)) {
-          switch (stat.type) {
-            case StatType.Codec:
-            case StatType.Inbound:
-              stats.push(stat);
-              break;
-            default:
-          }
-        }
-      }
-    }));
-
-    setStatList(StatByKind(stats))
-  }, [subscriber, mediaStream])
-
-  useEffect(() => {
-    const intervalId = setInterval(() => getStats(), 1000)
-    return () => {
-      clearInterval(intervalId)
-    }
-  }, [getStats])
-
   return (
     <div>
-      <p>Stream: {mediaStream.id}</p>
+      <p>Stream: {streamID}</p>
       {Array.from(statList).map(([kind, stats]) => (
-        <div>
+        <div key={kind}>
           <br />
           <p>Kind: {kind}</p>
           <br />
-          <table key={kind}>
+          <table>
             <thead>
               <tr>
                 <th>Name</th>
@@ -522,6 +517,95 @@ function StreamStats({
   )
 }
 
+function RoomStatContainer({
+  streamID,
+  statList,
+  children,
+  show
+}: PropsWithChildren<{
+  streamID: string,
+  statList: Map<string, StatObject>,
+  show: boolean
+}>) {
+  return (
+    <div className={`absolute top-[0] left-[0] z-30`}>
+      <Popover.Root open={show}>
+        <Popover.Trigger asChild>
+          {children}
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Content className={`z-30`}>
+            <ScrollArea.Root className={`flex p-4 w-[448px] h-[252px] bg-black-t border-dimgray rounded z-30`}>
+              <ScrollArea.Viewport>
+                <StreamStats statList={statList} streamID={streamID} />
+              </ScrollArea.Viewport>
+              <ScrollArea.Scrollbar orientation="vertical">
+                <ScrollArea.Thumb />
+              </ScrollArea.Scrollbar>
+              <ScrollArea.Scrollbar orientation="horizontal">
+                <ScrollArea.Thumb />
+              </ScrollArea.Scrollbar>
+              <ScrollArea.Corner />
+            </ScrollArea.Root>
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover.Root>
+    </div>
+  )
+}
+
+function RoomStream({
+  mediaStream,
+}: { mediaStream: MediaStream }) {
+  const { subscriber } = useContext(SubscriberContext)
+  const [statList, setStatList] = useState(new Map<string, StatObject>())
+  const [showStats, setShowStats] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+
+  const getStats = useCallback(async () => {
+    const tracks = mediaStream.getTracks()
+    const stats: StatObject[] = []
+    await Promise.all(tracks.map(async track => {
+      const report = await subscriber.peerConnection?.getStats(track);
+      if (report) {
+        for (const [_, stat] of Array.from(report)) {
+          switch (stat.type) {
+            case StatType.Codec:
+            case StatType.Inbound:
+              stats.push(stat);
+              break;
+            default:
+          }
+        }
+      }
+    }));
+    setStatList(StatByKind(stats))
+  }, [subscriber, mediaStream])
+
+  useEffect(() => {
+    const intervalId = setInterval(() => getStats(), 500)
+    return () => clearInterval(intervalId)
+  }, [getStats])
+
+  useEffect(() => {
+    if (!isLoading) return
+
+    const decodedFramesCount = statList.get(StatKind.Video)?.framesDecoded
+    if (decodedFramesCount && decodedFramesCount >= 30) {
+      setIsLoading(false)
+    }
+  }, [statList])
+
+  return (
+    <div className={`relative`}>
+      <RoomParticipant mediaStream={mediaStream} isLoading={isLoading} />
+      <RoomStatContainer show={showStats} streamID={mediaStream.id} statList={statList} >
+        <button onClick={() => setShowStats(!showStats)}>Show</button>
+      </RoomStatContainer>
+    </div>
+  )
+}
+
 function Room() {
   const { join, mediaStreamList } = useRoom()
 
@@ -529,35 +613,7 @@ function Room() {
     <div>
       <button onClick={join}>Join</button>
       {Object.entries(mediaStreamList).map(([id, mediaStream]) => (
-        <div key={id} className={`relative`}>
-          <RoomParticipant mediaStream={mediaStream} />
-
-          <div className={`absolute top-[0] left-[0]`}>
-            <Popover.Root>
-              <Popover.Trigger asChild>
-                <button>
-                  Show info
-                </button>
-              </Popover.Trigger>
-              <Popover.Portal>
-                <Popover.Content>
-                  <ScrollArea.Root className={`flex p-4 w-[448px] h-[252px] bg-black-t border-dimgray rounded`}>
-                    <ScrollArea.Viewport>
-                      <StreamStats mediaStream={mediaStream} />
-                    </ScrollArea.Viewport>
-                    <ScrollArea.Scrollbar orientation="vertical">
-                      <ScrollArea.Thumb />
-                    </ScrollArea.Scrollbar>
-                    <ScrollArea.Scrollbar orientation="horizontal">
-                      <ScrollArea.Thumb />
-                    </ScrollArea.Scrollbar>
-                    <ScrollArea.Corner />
-                  </ScrollArea.Root>
-                </Popover.Content>
-              </Popover.Portal>
-            </Popover.Root>
-          </div>
-        </div>
+        <RoomStream key={id} mediaStream={mediaStream} />
       ))}
     </div>
   )
