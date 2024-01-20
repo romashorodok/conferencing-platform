@@ -9,6 +9,8 @@ import { SignalContext } from './rtc/SignalProvider'
 import { EventEmitter } from 'events';
 import { SubscriberContext } from './rtc/SubscriberProvider'
 import { MediaStreamContext } from './rtc/MediaStreamProvider'
+import * as Popover from '@radix-ui/react-popover';
+import * as ScrollArea from '@radix-ui/react-scroll-area';
 
 export class Mutex {
   wait: Promise<void>;
@@ -492,24 +494,29 @@ function StreamStats({
 
   return (
     <div>
-      <p>Stats - {mediaStream.id}</p>
+      <p>Stream: {mediaStream.id}</p>
       {Array.from(statList).map(([kind, stats]) => (
-        <table key={kind}>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Value</th>
-            </tr>
-          </thead>
-          <tbody>
-            {Object.entries(stats).map(([name, val]) =>
-              <tr key={name}>
-                <td>{name}</td>
-                <td>{val}</td>
+        <div>
+          <br />
+          <p>Kind: {kind}</p>
+          <br />
+          <table key={kind}>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Value</th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {Object.entries(stats).map(([name, val]) =>
+                <tr key={name}>
+                  <td>{name}</td>
+                  <td>{val}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       ))}
     </div>
   )
@@ -521,12 +528,34 @@ function Room() {
   return (
     <div>
       <button onClick={join}>Join</button>
-
       {Object.entries(mediaStreamList).map(([id, mediaStream]) => (
         <div key={id} className={`relative`}>
           <RoomParticipant mediaStream={mediaStream} />
-          <div className={`absolute top-[0] right-[0]`}>
-            <StreamStats mediaStream={mediaStream} />
+
+          <div className={`absolute top-[0] left-[0]`}>
+            <Popover.Root>
+              <Popover.Trigger asChild>
+                <button>
+                  Show info
+                </button>
+              </Popover.Trigger>
+              <Popover.Portal>
+                <Popover.Content>
+                  <ScrollArea.Root className={`flex p-4 w-[448px] h-[252px] bg-black-t border-dimgray rounded`}>
+                    <ScrollArea.Viewport>
+                      <StreamStats mediaStream={mediaStream} />
+                    </ScrollArea.Viewport>
+                    <ScrollArea.Scrollbar orientation="vertical">
+                      <ScrollArea.Thumb />
+                    </ScrollArea.Scrollbar>
+                    <ScrollArea.Scrollbar orientation="horizontal">
+                      <ScrollArea.Thumb />
+                    </ScrollArea.Scrollbar>
+                    <ScrollArea.Corner />
+                  </ScrollArea.Root>
+                </Popover.Content>
+              </Popover.Portal>
+            </Popover.Root>
           </div>
         </div>
       ))}
