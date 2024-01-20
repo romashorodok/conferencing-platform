@@ -322,6 +322,38 @@ type SdpAnswer struct {
 
 var ErrOnStateClosed error = errors.New("Closed connection")
 
+func debounce(fn func() bool, delay time.Duration) func() bool {
+	var (
+		mu    sync.Mutex
+		last  time.Time
+		timer *time.Timer
+	)
+	return func() (result bool) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		if timer != nil {
+			timer.Stop()
+		}
+
+		elapsed := time.Since(last)
+		if elapsed > delay {
+			result = fn()
+			last = time.Now()
+			return
+		}
+
+		timer = time.AfterFunc(delay-elapsed, func() {
+			mu.Lock()
+			defer mu.Unlock()
+			result = fn()
+			last = time.Now()
+		})
+
+		return result
+	}
+}
+
 func (ctrl *whipController) WebrtcHttpIngestionControllerWebsocketRtcSignal(ctx echo.Context) error {
 	conn, err := upgrader.Upgrade(ctx.Response().Writer, ctx.Request(), nil)
 	if err != nil {
@@ -585,33 +617,41 @@ type peerConnectionState struct {
 	ws             *threadSafeWriter
 }
 
-// Add to list of tracks and fire renegotation for all PeerConnections
-func addTrack(t *webrtc.TrackRemote) *webrtc.TrackLocalStaticRTP {
-	listLock.Lock()
-	defer func() {
-		listLock.Unlock()
-		signalPeerConnections()
-	}()
+func syncAttempt() (tryAgain bool) {
+	for _, conn := range peerConnections {
+		log.Printf("sync attempt %+v", conn.peerContext.subscriber)
 
-	// Create a new TrackLocal with the same codec as our incoming
-	trackLocal, err := webrtc.NewTrackLocalStaticRTP(t.Codec().RTPCodecCapability, t.ID(), t.StreamID())
-	if err != nil {
-		panic(err)
+		if conn.peerContext.subscriber.peerConnection.ConnectionState() == webrtc.PeerConnectionStateClosed {
+			continue
+		}
+
+		offer, err := conn.peerContext.subscriber.peerConnection.CreateOffer(nil)
+		if err != nil {
+			log.Println("offer error", err)
+			return true
+		}
+
+		if err = conn.peerContext.subscriber.peerConnection.SetLocalDescription(offer); err != nil {
+			log.Println("local desc", err)
+			return true
+		}
+
+		log.Println("Dispatch offer")
+
+		//
+		offerString, err := json.Marshal(offer)
+		if err != nil {
+			return true
+		}
+		//
+		if err = conn.ws.WriteJSON(&websocketMessage{
+			Event: "offer",
+			Data:  string(offerString),
+		}); err != nil {
+			return true
+		}
 	}
-
-	trackLocals[t.ID()] = trackLocal
-	return trackLocal
-}
-
-// Remove from list of tracks and fire renegotation for all PeerConnections
-func removeTrack(t *webrtc.TrackLocalStaticRTP) {
-	listLock.Lock()
-	defer func() {
-		listLock.Unlock()
-		signalPeerConnections()
-	}()
-
-	delete(trackLocals, t.ID())
+	return
 }
 
 func signalPeerConnections() {
@@ -620,179 +660,21 @@ func signalPeerConnections() {
 		listLock.Unlock()
 		dispatchKeyFrame()
 	}()
-	attemptSync := func() (tryAgain bool) {
-		for _, conn := range peerConnections {
-			log.Printf("sync attempt %+v", conn.peerContext.subscriber)
 
-			if conn.peerContext.subscriber.peerConnection.ConnectionState() == webrtc.PeerConnectionStateClosed {
-				continue
-			}
-
-			log.Println("current stack", peerConnections)
-
-			// existingSenders := map[string]bool{}
-
-			// // Clean prev senders
-			// for _, sender := range conn.peerContext.subscriber.peerConnection.GetSenders() {
-			// 	if sender.Track() == nil {
-			// 		continue
-			// 	}
-			// 	// existingSenders[sender.Track().ID()] = true
-			//
-			// 	if _, ok := trackLocals[sender.Track().ID()]; !ok {
-			// 		if err := conn.peerContext.subscriber.peerConnection.RemoveTrack(sender); err != nil {
-			// 			return true
-			// 		}
-			// 	}
-			// }
-
-			// // Don't add current publisher senders to subscriber to receive loopback
-			// for _, receiver := range conn.peerContext.subscriber.peerConnection.GetReceivers() {
-			// 	if receiver.Track() == nil {
-			// 		continue
-			// 	}
-			// 	existingSenders[receiver.Track().ID()] = true
-			// }
-
-			// for _, track := range conn.peerContext.subscriber.tracks {
-			// 	_, _ = conn.peerConnection.AddTransceiverFromTrack(track.track, webrtc.RTPTransceiverInit{
-			// 		Direction: webrtc.RTPTransceiverDirectionSendonly,
-			// 	})
-			// }
-
-			// log.Println(existingSenders)
-
-			// for trackID := range trackLocals {
-			// 	if _, exists := existingSenders[trackID]; !exists {
-			// 		// log.Println(trackLocals[trackID].ID(), trackLocals[trackID].StreamID())
-			// 		if _, err := peerConnections[i].peerContext.subscriber.AddTrack(trackLocals[trackID]); err != nil {
-			// 			return true
-			// 		}
-			// 	}
-			// }
-
-			// you can't break the flow of a new RTCPeerConnections (create offer -> set local -> set remote -> create answer -> set local -> set remote). If you create offer on one side, answer on the other and only then set the local/remote descriptions it should break by design.
-
-			// offer, err := peerConnections[i].peerContext.subscriber.CreateOffer(nil)
-			offer, err := conn.peerContext.subscriber.peerConnection.CreateOffer(nil)
-			if err != nil {
-				log.Println("offer error", err)
-				return true
-			}
-
-			if err = conn.peerContext.subscriber.peerConnection.SetLocalDescription(offer); err != nil {
-				log.Println("local desc", err)
-				return true
-			}
-
-			log.Println("Dispatch offer")
-
-			//
-			offerString, err := json.Marshal(offer)
-			if err != nil {
-				return true
-			}
-			//
-			if err = conn.ws.WriteJSON(&websocketMessage{
-				Event: "offer",
-				Data:  string(offerString),
-			}); err != nil {
-				return true
-			}
-		}
-		return
-	}
-
-	// attemptSync := func() (tryAgain bool) {
-	// 	for i := range peerConnections {
-	// 		if peerConnections[i].peerConnection.ConnectionState() == webrtc.PeerConnectionStateClosed {
-	// 			peerConnections = append(peerConnections[:i], peerConnections[i+1:]...)
-	// 			return true // We modified the slice, start from the beginning
-	// 		}
-	//
-	// 		if peerConnections[i].peerConnection.ConnectionState() != webrtc.PeerConnectionStateConnected {
-	// 			return true
-	// 		}
-	//
-	// 		// map of sender we already are seanding, so we don't double send
-	// 		existingSenders := map[string]bool{}
-	//
-	// 		for _, sender := range peerConnections[i].peerConnection.GetSenders() {
-	// 			if sender.Track() == nil {
-	// 				continue
-	// 			}
-	//
-	// 			existingSenders[sender.Track().ID()] = true
-	//
-	// 			// If we have a RTPSender that doesn't map to a existing track remove and signal
-	// 			if _, ok := trackLocals[sender.Track().ID()]; !ok {
-	// 				if err := peerConnections[i].peerConnection.RemoveTrack(sender); err != nil {
-	// 					return true
-	// 				}
-	// 			}
-	// 		}
-	// 		// log.Println(peerConnections[i].peerConnection.GetReceivers())
-	//
-	// 		// Don't receive videos we are sending, make sure we don't have loopback
-	// 		for _, receiver := range peerConnections[i].peerConnection.GetReceivers() {
-	// 			if receiver.Track() == nil {
-	// 				continue
-	// 			}
-	//
-	// 			existingSenders[receiver.Track().ID()] = true
-	// 		}
-	//
-	// 		// Add all track we aren't sending yet to the PeerConnection
-	// 		for trackID := range trackLocals {
-	// 			if _, ok := existingSenders[trackID]; !ok {
-	// 				if _, err := peerConnections[i].peerConnection.AddTrack(trackLocals[trackID]); err != nil {
-	// 					return true
-	// 				}
-	// 			}
-	// 		}
-	//
-	// 		<-webrtc.GatheringCompletePromise(peerConnections[i].peerConnection)
-	//
-	// 		offer, err := peerConnections[i].peerConnection.CreateOffer(nil)
-	// 		if err != nil {
-	// 			log.Println("offer error", err)
-	// 			return true
-	// 		}
-	//
-	// 		if err = peerConnections[i].peerConnection.SetLocalDescription(offer); err != nil {
-	// 			log.Println("local desc", err)
-	// 			return true
-	// 		}
-	//
-	// 		log.Println("Dispatch offer")
-	//
-	// 		offerString, err := json.Marshal(offer)
-	// 		if err != nil {
-	// 			return true
-	// 		}
-	//
-	// 		if err = peerConnections[i].ws.WriteJSON(&websocketMessage{
-	// 			Event: "offer",
-	// 			Data:  string(offerString),
-	// 		}); err != nil {
-	// 			return true
-	// 		}
-	// 	}
-	//
-	// 	return
-	// }
+	signalPeerConnectionDebounce := debounce(syncAttempt, time.Millisecond*4)
 
 	for syncAttempt := 0; ; syncAttempt++ {
 		if syncAttempt == 25 {
 			// Release the lock and attempt a sync in 3 seconds. We might be blocking a RemoveTrack or AddTrack
 			go func() {
-				time.Sleep(time.Second * 3)
+				// time.Sleep(time.Second * 3)
+				time.Sleep(time.Millisecond * 20)
 				signalPeerConnections()
 			}()
 			return
 		}
 
-		if !attemptSync() {
+		if !signalPeerConnectionDebounce() {
 			break
 		}
 	}
@@ -817,220 +699,6 @@ func dispatchKeyFrame() {
 		}
 	}
 }
-
-// signalPeerConnections updates each PeerConnection so that it is getting all the expected media tracks
-// func signalPeerConnections() {
-// 	listLock.Lock()
-// 	defer func() {
-// 		listLock.Unlock()
-// 		dispatchKeyFrame()
-// 	}()
-//
-// 	attemptSync := func() (tryAgain bool) {
-// 		for i := range peerConnections {
-// 			if peerConnections[i].peerConnection.ConnectionState() == webrtc.PeerConnectionStateClosed {
-// 				peerConnections = append(peerConnections[:i], peerConnections[i+1:]...)
-// 				return true // We modified the slice, start from the beginning
-// 			}
-//
-// 			// map of sender we already are seanding, so we don't double send
-// 			existingSenders := map[string]bool{}
-//
-// 			for _, sender := range peerConnections[i].peerConnection.GetSenders() {
-// 				if sender.Track() == nil {
-// 					continue
-// 				}
-//
-// 				existingSenders[sender.Track().ID()] = true
-//
-// 				// If we have a RTPSender that doesn't map to a existing track remove and signal
-// 				if _, ok := trackLocals[sender.Track().ID()]; !ok {
-// 					if err := peerConnections[i].peerConnection.RemoveTrack(sender); err != nil {
-// 						return true
-// 					}
-// 				}
-// 			}
-// 			log.Println(peerConnections[i].peerConnection.GetReceivers())
-//
-// 			// Don't receive videos we are sending, make sure we don't have loopback
-// 			for _, receiver := range peerConnections[i].peerConnection.GetReceivers() {
-// 				if receiver.Track() == nil {
-// 					continue
-// 				}
-//
-// 				existingSenders[receiver.Track().ID()] = true
-// 			}
-//
-// 			// Add all track we aren't sending yet to the PeerConnection
-// 			for trackID := range trackLocals {
-// 				if _, ok := existingSenders[trackID]; !ok {
-// 					if _, err := peerConnections[i].peerConnection.AddTrack(trackLocals[trackID]); err != nil {
-// 						return true
-// 					}
-// 				}
-// 			}
-// 			log.Println(existingSenders)
-//
-// 			offer, err := peerConnections[i].peerConnection.CreateOffer(nil)
-// 			if err != nil {
-// 				return true
-// 			}
-//
-// 			<-webrtc.GatheringCompletePromise(peerConnections[i].peerConnection)
-// 			// you can't break the flow of a new RTCPeerConnections (create offer -> set local -> set remote -> create answer -> set local -> set remote). If you create offer on one side, answer on the other and only then set the local/remote descriptions it should break by design.
-//
-// 			if err = peerConnections[i].peerConnection.SetLocalDescription(offer); err != nil {
-// 				return true
-// 			}
-//
-// 			offerString, err := json.Marshal(offer)
-// 			if err != nil {
-// 				return true
-// 			}
-// 			if err = peerConnections[i].signaling.SendText(string(offerString)); err != nil {
-// 				return true
-// 			}
-// 		}
-//
-// 		return
-// 	}
-//
-// 	for syncAttempt := 0; ; syncAttempt++ {
-// 		if syncAttempt == 25 {
-// 			// Release the lock and attempt a sync in 3 seconds. We might be blocking a RemoveTrack or AddTrack
-// 			go func() {
-// 				time.Sleep(time.Second * 3)
-// 				signalPeerConnections()
-// 			}()
-// 			log.Println("Failed sync")
-// 			return
-// 		}
-//
-// 		if !attemptSync() {
-// 			log.Println("success sync")
-// 			break
-// 		}
-// 	}
-// }
-//
-// // dispatchKeyFrame sends a keyframe to all PeerConnections, used everytime a new user joins the call
-// func dispatchKeyFrame() {
-// 	listLock.Lock()
-// 	defer listLock.Unlock()
-//
-// 	for i := range peerConnections {
-// 		for _, receiver := range peerConnections[i].peerConnection.GetReceivers() {
-// 			if receiver.Track() == nil {
-// 				continue
-// 			}
-//
-// 			_ = peerConnections[i].peerConnection.WriteRTCP([]rtcp.Packet{
-// 				&rtcp.PictureLossIndication{
-// 					MediaSSRC: uint32(receiver.Track().SSRC()),
-// 				},
-// 			})
-// 		}
-// 	}
-// }
-
-// func (ctrl *whipController) WebrtcHttpIngestionControllerWebrtcHttpIngest(ctx echo.Context, sessionID string) error {
-// 	var request ingress.WebrtcHttpIngestRequest
-//
-// 	if err := json.NewDecoder(ctx.Request().Body).Decode(&request); err != nil {
-// 		return echo.NewHTTPError(http.StatusInternalServerError, err)
-// 	}
-// 	peerConnection, err := webrtc.NewPeerConnection(webrtc.Configuration{})
-// 	if err != nil {
-// 		log.Print("peerConnection", err)
-// 		return err
-// 	}
-//
-// 	for _, typ := range []webrtc.RTPCodecType{webrtc.RTPCodecTypeVideo, webrtc.RTPCodecTypeAudio} {
-// 		if _, err := peerConnection.AddTransceiverFromKind(typ, webrtc.RTPTransceiverInit{
-// 			Direction: webrtc.RTPTransceiverDirectionSendrecv,
-// 		}); err != nil {
-// 			log.Print("transivers errors", err)
-// 			return err
-// 		}
-// 	}
-//
-// 	peerConnectionDataChannel := &peerConnectionState{
-// 		peerConnection: peerConnection,
-// 		signaling:      nil,
-// 	}
-//
-// 	listLock.Lock()
-// 	peerConnections = append(peerConnections, peerConnectionDataChannel)
-// 	listLock.Unlock()
-//
-// 	peerConnection.OnDataChannel(func(dc *webrtc.DataChannel) {
-// 		peerConnectionDataChannel.signaling = dc
-//
-// 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-// 			type localPeerAnswer struct {
-// 				Type string
-// 				Sdp  string
-// 			}
-//
-// 			var answer localPeerAnswer
-// 			json.Unmarshal(msg.Data, &answer)
-//
-// 			desc := webrtc.SessionDescription{
-// 				Type: webrtc.SDPTypeAnswer,
-// 				SDP:  answer.Sdp,
-// 			}
-//
-// 			if err := peerConnection.SetLocalDescription(desc); err != nil {
-// 				log.Println("Unable set answer", err)
-// 				return
-// 			}
-// 			log.Println("Success answer set")
-// 		})
-// 	})
-//
-// 	peerConnection.OnTrack(func(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
-// 		trackLocal := addTrack(track)
-// 		defer removeTrack(trackLocal)
-//
-// 		buf := make([]byte, 1500)
-// 		for {
-// 			i, _, err := track.Read(buf)
-// 			if err != nil {
-// 				return
-// 			}
-//
-// 			if _, err = trackLocal.Write(buf[:i]); err != nil {
-// 				return
-// 			}
-// 		}
-// 	})
-//
-// 	err = peerConnection.SetRemoteDescription(webrtc.SessionDescription{
-// 		Type: webrtc.SDPTypeOffer,
-// 		SDP:  *request.Offer.Sdp,
-// 	})
-// 	if err != nil {
-// 		log.Println("Set remote desc", err)
-// 		return err
-// 	}
-//
-// 	answer, err := peerConnection.CreateAnswer(nil)
-//
-// 	peerConnection.SetLocalDescription(answer)
-//
-// 	<-webrtc.GatheringCompletePromise(peerConnection)
-//
-// 	ctx.JSON(http.StatusCreated,
-// 		&ingress.WebrtcHttpIngestResponse{
-// 			Answer: &ingress.SessionDescription{
-// 				Sdp:  &peerConnection.LocalDescription().SDP,
-// 				Type: &INGEST_ANSWER_TYPE,
-// 			},
-// 		},
-// 	)
-//
-// 	return nil
-// }
 
 // func (ctrl *whipController) WebrtcHttpIngestionControllerWebrtcHttpIngest(ctx echo.Context, sessionID string) error {
 // 	var request ingress.WebrtcHttpIngestRequest

@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { Dispatch, Reducer, useCallback, useContext, useEffect, useReducer, useRef, useState } from 'react'
 import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
 import cameraSvg from './assets/camera.svg'
@@ -175,7 +175,11 @@ export class Signal extends EventEmitter {
   }
 }
 
-function useSubscriber() {
+function useSubscriber({
+  setMediaStream
+}: {
+  setMediaStream: Dispatch<SetMediaStreamAction>
+}) {
   const { subscriber } = useContext(SubscriberContext)
   const { signal } = useContext(SignalContext)
 
@@ -243,35 +247,43 @@ function useSubscriber() {
 
 
   useEffect(() => {
-    subscriber.peerConnection!.ontrack = (event) => {
-      if (event.track.kind === 'audio') {
+    subscriber.peerConnection!.ontrack = (evt) => {
+      if (evt.track.kind === 'audio') {
         return
       }
 
       // @ts-ignore
-      const el: HTMLVideoElement = document.createElement(event.track.kind)
-      el.srcObject = event.streams[0]
-      event.streams[0].addEventListener('removetrack', function(evt) {
-        console.log("remove track stream end", evt)
-      })
+      const el: HTMLVideoElement = document.createElement(evt.track.kind)
+      const [stream] = evt.streams
 
-      el.autoplay = true
-      el.controls = true
-      document.getElementById('remoteVideos')!.appendChild(el)
+      setMediaStream({ [stream.id]: stream })
 
-      event.track.onmute = function() {
-        el.play()
-      }
-      event.track.onended = function(evt) {
-        console.log("Stream ended", evt)
-      }
+      stream.onremovetrack = () => setMediaStream({ [stream.id]: undefined })
 
-      event.streams[0].onremovetrack = (evt) => {
-        console.log("stream", evt)
-        if (el.parentNode) {
-          el.parentNode.removeChild(el)
-        }
-      }
+      // el.srcObject = event.streams[0]
+      // event.streams[0].addEventListener('removetrack', function(evt) {
+      //   console.log("remove track stream end", evt)
+      // })
+      //
+      // el.autoplay = true
+      // el.controls = true
+      // document.getElementById('remoteVideos')!.appendChild(el)
+      //
+      // event.track.onmute = function() {
+      //   el.play()
+      // }
+      //
+      // event.track.onended = function(evt) {
+      //   console.log("Stream ended", evt)
+      // }
+      //
+      // event.streams[0].onremovetrack = (evt) => {
+      //   console.log("stream", evt)
+      //   if (el.parentNode) {
+      //     el.parentNode.removeChild(el)
+      //   }
+      // }
+
     }
   }, [])
 
@@ -285,10 +297,12 @@ function usePublisher() {
   const { mediaStream } = useContext(MediaStreamContext)
 
   const publish = useCallback(async () => {
-    const stream = await mediaStream
-    stream.getTracks().forEach(t => {
-      subscriber.peerConnection?.addTrack(t, stream)
-    })
+    try {
+      const stream = await mediaStream
+      stream.getTracks().forEach(t => {
+        subscriber.peerConnection?.addTrack(t, stream)
+      })
+    } catch { }
   }, [subscriber, mediaStream])
 
   useEffect(() => () => {
@@ -301,12 +315,27 @@ function usePublisher() {
 }
 
 function useRoom() {
+  const [mediaStreamList, setMediaStream] = useReducer<Reducer<MediaStreamReducerState, SetMediaStreamAction>>(
+    (state, action) => {
+      for (const [streamID, mediaStream] of Object.entries(action)) {
+        if (!mediaStream) {
+          delete state[streamID]
+          continue
+        }
+        Object.assign(state, { [streamID]: mediaStream })
+      }
+      return { ...state }
+    },
+    {}
+  )
+  const { subscribe } = useSubscriber({ setMediaStream })
   const { publish } = usePublisher()
-  const { subscribe } = useSubscriber()
 
   const join = useCallback(() => publish().then(_ => subscribe()), [publish, subscribe])
 
-  return { join }
+  useEffect(() => console.log(mediaStreamList), [mediaStreamList])
+
+  return { join, mediaStreamList }
 }
 
 function CameraComponent() {
@@ -357,11 +386,162 @@ function CameraComponent() {
   );
 };
 
-function App() {
-  // const { subscribe } = useSubscriber()
-  // const { publish } = usePublisher()
+function RoomParticipant({
+  mediaStream
+}: {
+  mediaStream: MediaStream
+}) {
+  const video = useRef<HTMLVideoElement>(null)
 
-  const { join } = useRoom()
+  useEffect(() => {
+    if (video.current) {
+      const vi = video.current
+      vi.srcObject = mediaStream
+      vi.autoplay = true
+      vi.controls = true
+    }
+  }, [video, mediaStream])
+
+  useEffect(() => {
+    if (!mediaStream || !video.current) return
+    const vi = video.current
+
+    const [track] = mediaStream.getVideoTracks()
+    track.onmute = function() {
+      vi.play()
+    }
+  }, [video, mediaStream])
+
+  return (
+    <div>
+      <video ref={video} />
+    </div>
+  )
+}
+
+
+enum StatType {
+  Codec = "codec",
+  Inbound = "inbound-rtp",
+}
+
+enum StatKind {
+  Video = "video",
+  Audio = "audio",
+}
+
+type StatObject = {
+  id: string,
+  type: string,
+  kind: string,
+  mimeType: string
+}
+
+function StatByKind(statList: StatObject[]): Map<string, StatObject> {
+  const result = new Map<string, StatObject>();
+
+  for (const kindName of Object.values(StatKind)) {
+    let kindStat: StatObject = {} as StatObject;
+    for (const stat of statList) {
+      if (stat.kind !== kindName && !stat.mimeType?.includes(kindName)) {
+        continue;
+      }
+      kindStat = { ...stat, ...kindStat }
+    }
+    result.set(kindName, kindStat);
+  }
+  return result;
+}
+
+function StreamStats({
+  mediaStream
+}: {
+  mediaStream: MediaStream
+}) {
+  const { subscriber } = useContext(SubscriberContext)
+  const [statList, setStatList] = useState(new Map<string, StatObject>())
+
+  const getStats = useCallback(async () => {
+    const tracks = mediaStream.getTracks()
+    const stats: StatObject[] = []
+
+    await Promise.all(tracks.map(async track => {
+      const report = await subscriber.peerConnection?.getStats(track);
+      if (report) {
+        for (const [_, stat] of Array.from(report)) {
+          switch (stat.type) {
+            case StatType.Codec:
+            case StatType.Inbound:
+              stats.push(stat);
+              break;
+            default:
+          }
+        }
+      }
+    }));
+
+    setStatList(StatByKind(stats))
+  }, [subscriber, mediaStream])
+
+  useEffect(() => {
+    const intervalId = setInterval(() => getStats(), 1000)
+    return () => {
+      clearInterval(intervalId)
+    }
+  }, [getStats])
+
+  return (
+    <div>
+      <p>Stats - {mediaStream.id}</p>
+      {Array.from(statList).map(([kind, stats]) => (
+        <table key={kind}>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(stats).map(([name, val]) =>
+              <tr key={name}>
+                <td>{name}</td>
+                <td>{val}</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      ))}
+    </div>
+  )
+}
+
+function Room() {
+  const { join, mediaStreamList } = useRoom()
+
+  return (
+    <div>
+      <button onClick={join}>Join</button>
+
+      {Object.entries(mediaStreamList).map(([id, mediaStream]) => (
+        <div key={id} className={`relative`}>
+          <RoomParticipant mediaStream={mediaStream} />
+          <div className={`absolute top-[0] right-[0]`}>
+            <StreamStats mediaStream={mediaStream} />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+type MediaStreamReducerState = { [streamID: string]: MediaStream }
+
+type SetMediaStreamAction = { [streamID: string]: MediaStream | undefined }
+
+function App() {
+
+
+  // const { join } = useRoom()
 
   const [count, setCount] = useState(0)
 
@@ -370,12 +550,11 @@ function App() {
   return (
     <>
       <CameraComponent />
+      <Room />
 
       <div>
         <h3> Remote Video </h3>
         <div id="remoteVideos"></div> <br />
-
-        <button onClick={join}>Join</button>
 
         <a href="https://vitejs.dev" target="_blank">
           <img src={viteLogo} className="logo" alt="Vite logo" />
