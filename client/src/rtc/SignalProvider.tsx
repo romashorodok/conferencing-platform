@@ -8,8 +8,11 @@ type SignalContextType = {
 
 export const SignalContext = createContext<SignalContextType>(undefined as never)
 
+const SIGNAL_ROOM = import.meta.env.VITE_DEFAULT_SIGNAL_ROOM;
+
 function SignalContextProvider({ children }: PropsWithChildren<{}>) {
-  const [signal, setSignal] = useState<Signal>(new Signal())
+  console.log(SIGNAL_ROOM)
+  const [signal, setSignal] = useState<Signal>(new Signal(SIGNAL_ROOM))
 
   useEffect(() => {
     if (signal) {
