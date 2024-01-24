@@ -335,26 +335,23 @@ function useRoom() {
 }
 
 function CameraComponent() {
-  const { mediaStream, mediaStreamReady } = useContext(MediaStreamContext)
+  const {
+    mediaStream,
+    mediaStreamReady,
+    setVideoMute,
+    setAudioMute,
+  } = useContext(MediaStreamContext)
   const [isVideoMuted, setVideoMuted] = useState(true);
   const [isAudioMuted, setAudioMuted] = useState(true);
 
   const video = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    async function changeVideoMute() {
-      const stream = await mediaStream
-      stream.getVideoTracks().forEach(t => t.enabled = !isVideoMuted)
-    }
-    changeVideoMute()
+    setVideoMute(isVideoMuted)
   }, [isVideoMuted, mediaStream])
 
   useEffect(() => {
-    async function changeAudioMute() {
-      const stream = await mediaStream
-      stream.getAudioTracks().forEach(t => t.enabled = !isVideoMuted)
-    }
-    changeAudioMute()
+    setAudioMute(isAudioMuted)
   }, [isAudioMuted, mediaStream])
 
   useEffect(() => {
@@ -397,7 +394,6 @@ function RoomParticipant({
   isLoading: boolean,
 }) {
   const video = useRef<HTMLVideoElement>(null)
-  const audio = useRef<HTMLAudioElement>(null)
 
   useEffect(() => {
     if (video.current) {
@@ -406,14 +402,6 @@ function RoomParticipant({
       vi.autoplay = true
     }
   }, [video, mediaStream])
-
-  useEffect(() => {
-    if (audio.current) {
-      const au = audio.current
-      au.srcObject = mediaStream
-      au.autoplay = true
-    }
-  }, [audio, mediaStream])
 
   useEffect(() => {
     if (!mediaStream || !video.current) return
@@ -427,25 +415,11 @@ function RoomParticipant({
     }
   }, [video, mediaStream])
 
-  useEffect(() => {
-    if (!mediaStream || !audio.current) return
-    const vi = audio.current
-
-    const [videoTrack] = mediaStream.getAudioTracks()
-    if (!videoTrack) return
-
-    videoTrack.onmute = function() {
-      vi.play()
-    }
-  }, [video, mediaStream])
-
-
   return (
     <div>
       <div className={`flex relative w-[448px] h-[252px]`} >
         <div className={`${isLoading ? 'invisible' : 'visible'} z-10`}>
-          <video ref={video} className={`w-[448px] h-[252px]`} controls />
-          <audio ref={audio} className={`w-[448px] h-[252px]`} controls />
+          <video ref={video} className={`w-[448px] h-[252px]`} />
         </div>
         {isLoading
           ? (
