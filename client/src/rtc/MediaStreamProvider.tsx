@@ -1,4 +1,5 @@
 import { PropsWithChildren, createContext, useEffect, useState } from "react";
+import { isChromiumBased } from "../helpers";
 
 type MediaStreamContextType = {
   mediaStream: Promise<MediaStream>
@@ -19,8 +20,20 @@ const videoStream = navigator.mediaDevices.getUserMedia({
   // },
 })
 
+const audioConfig: MediaTrackConstraints = {
+  noiseSuppression: true,
+  echoCancellation: false,
+  autoGainControl: false,
+  sampleRate: 48000,
+}
+
+if (isChromiumBased()) {
+  // @ts-ignore
+  audioConfig['googAutoGainControl'] = false
+}
+
 const audioStream = navigator.mediaDevices.getUserMedia({
-  audio: true,
+  audio: audioConfig,
 });
 
 const mediaStream = new Promise<MediaStream>(async (resolve, reject) => {

@@ -214,10 +214,11 @@ function useSubscriber({
       if (!subscriber)
         return
       await subscriber.setRemoteDescription(JSON.parse(sd))
-      const answer = await subscriber.createAnswer()
-      if (!answer) {
+      let answer = await subscriber.createAnswer()
+      if (!answer || !answer.sdp) {
         throw new Error("undefined subscriber an answer, when the negotiate")
       }
+      answer.sdp = answer.sdp.replace("useinbandfec=1", "useinbandfec=1;stereo=1")
       subscriber.setLocalDescription(answer)
       signal.answer(answer)
     }
@@ -300,10 +301,8 @@ function useRoom() {
         if (state[streamID]) {
           context = state[streamID]
         } else {
-          context = { stream: new MediaStream([trackEvent.track]), originList: [] }
+          context = { stream: new MediaStream(), originList: [] }
         }
-
-        // if (trackEvent.track.kind === 'video') return
 
         context.originList.push(trackEvent)
         context.stream.addTrack(trackEvent.track)
@@ -312,15 +311,6 @@ function useRoom() {
       })
 
       return { ...state }
-
-      // for (const [streamID, mediaStream] of Object.entries(event)) {
-      //   if (!mediaStream) {
-      //     delete state[streamID]
-      //     continue
-      //   }
-      //   Object.assign(state, { [streamID]: mediaStream })
-      // }
-      // return { ...state }
     },
     {}
   )
