@@ -7,12 +7,30 @@ type MediaStreamContextType = {
 
 export const MediaStreamContext = createContext<MediaStreamContextType>(undefined!)
 
-const mediaStream = navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+// const videoStream = navigator.mediaDevices.getUserMedia({
+//   video: true,
+// })
+//
+// const audioStream = navigator.mediaDevices.getUserMedia({
+//   audio: true,
+//   // NOTE: Firefox not support low resolutions
+//   // video: {
+//   //   width: { exact: 448 },
+//   //   height: { exact: 216 }
+//   // },
+//   // audio: true
+// });
+
+const mediaStream = navigator.mediaDevices.getUserMedia({
+  audio: true,
+  video: true,
+})
 
 function MediaStreamProvider({ children }: PropsWithChildren<{}>) {
   const [mediaStreamReady, setMediaStreamReady] = useState(false)
 
   useEffect(() => {
+
     mediaStream.then(_ => setMediaStreamReady(true))
   }, [])
 

@@ -181,7 +181,7 @@ export class Signal extends EventEmitter {
 function useSubscriber({
   setMediaStream
 }: {
-  setMediaStream: Dispatch<SetMediaStreamAction>
+  setMediaStream: Dispatch<OriginTrackEvent>
 }) {
   const { subscriber } = useContext(SubscriberContext)
   const { signal } = useContext(SignalContext)
@@ -242,51 +242,21 @@ function useSubscriber({
   // After that, peers must send their ice candidates
   const subscribe = useCallback(async () => {
     await signal.onConnect.wait
-
-    // if (subscriber.peerConnection?.connectionState !== 'connected') {
     signal.subscribe()
-    // }
   }, [signal])
-
 
   useEffect(() => {
     subscriber.peerConnection!.ontrack = (evt) => {
-      if (evt.track.kind === 'audio') {
-        return
-      }
+      // if (evt.track.kind === 'audio') {
+      //   return
+      // }
 
       // @ts-ignore
       const el: HTMLVideoElement = document.createElement(evt.track.kind)
       const [stream] = evt.streams
-
-      setMediaStream({ [stream.id]: stream })
-
+      setMediaStream({ [stream.id]: evt })
+      // setMediaStream({ [stream.id]: stream })
       stream.onremovetrack = () => setMediaStream({ [stream.id]: undefined })
-
-      // el.srcObject = event.streams[0]
-      // event.streams[0].addEventListener('removetrack', function(evt) {
-      //   console.log("remove track stream end", evt)
-      // })
-      //
-      // el.autoplay = true
-      // el.controls = true
-      // document.getElementById('remoteVideos')!.appendChild(el)
-      //
-      // event.track.onmute = function() {
-      //   el.play()
-      // }
-      //
-      // event.track.onended = function(evt) {
-      //   console.log("Stream ended", evt)
-      // }
-      //
-      // event.streams[0].onremovetrack = (evt) => {
-      //   console.log("stream", evt)
-      //   if (el.parentNode) {
-      //     el.parentNode.removeChild(el)
-      //   }
-      // }
-
     }
   }, [])
 
@@ -318,16 +288,39 @@ function usePublisher() {
 }
 
 function useRoom() {
-  const [mediaStreamList, setMediaStream] = useReducer<Reducer<MediaStreamReducerState, SetMediaStreamAction>>(
-    (state, action) => {
-      for (const [streamID, mediaStream] of Object.entries(action)) {
-        if (!mediaStream) {
+  const [mediaStreamList, setMediaStream] = useReducer<Reducer<MediaStreamContextReducer, OriginTrackEvent>>(
+    (state, event) => {
+      Object.entries(event).forEach(([streamID, trackEvent]) => {
+        if (!trackEvent) {
           delete state[streamID]
-          continue
+          return
         }
-        Object.assign(state, { [streamID]: mediaStream })
-      }
+
+        let context: StreamContext
+        if (state[streamID]) {
+          context = state[streamID]
+        } else {
+          context = { stream: new MediaStream([trackEvent.track]), originList: [] }
+        }
+
+        // if (trackEvent.track.kind === 'video') return
+
+        context.originList.push(trackEvent)
+        context.stream.addTrack(trackEvent.track)
+
+        Object.assign(state, { [streamID]: context })
+      })
+
       return { ...state }
+
+      // for (const [streamID, mediaStream] of Object.entries(event)) {
+      //   if (!mediaStream) {
+      //     delete state[streamID]
+      //     continue
+      //   }
+      //   Object.assign(state, { [streamID]: mediaStream })
+      // }
+      // return { ...state }
     },
     {}
   )
@@ -404,6 +397,7 @@ function RoomParticipant({
   isLoading: boolean,
 }) {
   const video = useRef<HTMLVideoElement>(null)
+  const audio = useRef<HTMLAudioElement>(null)
 
   useEffect(() => {
     if (video.current) {
@@ -414,21 +408,44 @@ function RoomParticipant({
   }, [video, mediaStream])
 
   useEffect(() => {
+    if (audio.current) {
+      const au = audio.current
+      au.srcObject = mediaStream
+      au.autoplay = true
+    }
+  }, [audio, mediaStream])
+
+  useEffect(() => {
     if (!mediaStream || !video.current) return
     const vi = video.current
 
     const [videoTrack] = mediaStream.getVideoTracks()
+    if (!videoTrack) return
 
     videoTrack.onmute = function() {
       vi.play()
     }
   }, [video, mediaStream])
 
+  useEffect(() => {
+    if (!mediaStream || !audio.current) return
+    const vi = audio.current
+
+    const [videoTrack] = mediaStream.getAudioTracks()
+    if (!videoTrack) return
+
+    videoTrack.onmute = function() {
+      vi.play()
+    }
+  }, [video, mediaStream])
+
+
   return (
     <div>
       <div className={`flex relative w-[448px] h-[252px]`} >
         <div className={`${isLoading ? 'invisible' : 'visible'} z-10`}>
-          <video ref={video} className={`w-[448px] h-[252px]`} />
+          <video ref={video} className={`w-[448px] h-[252px]`} controls />
+          <audio ref={audio} className={`w-[448px] h-[252px]`} controls />
         </div>
         {isLoading
           ? (
@@ -449,7 +466,7 @@ enum StatType {
   Inbound = "inbound-rtp",
 }
 
-enum StatKind {
+enum TrackKind {
   Video = "video",
   Audio = "audio",
 }
@@ -467,7 +484,7 @@ type StatObject = {
 function StatByKind(statList: StatObject[]): Map<string, StatObject> {
   const result = new Map<string, StatObject>();
 
-  for (const kindName of Object.values(StatKind)) {
+  for (const kindName of Object.values(TrackKind)) {
     let kindStat: StatObject = {} as StatObject;
     for (const stat of statList) {
       if (stat.kind !== kindName && !stat.mimeType?.includes(kindName)) {
@@ -590,7 +607,7 @@ function RoomStream({
   useEffect(() => {
     if (!isLoading) return
 
-    const decodedFramesCount = statList.get(StatKind.Video)?.framesDecoded
+    const decodedFramesCount = statList.get(TrackKind.Video)?.framesDecoded
     if (decodedFramesCount && decodedFramesCount >= 30) {
       setIsLoading(false)
     }
@@ -612,16 +629,22 @@ function Room() {
   return (
     <div>
       <button onClick={join}>Join</button>
-      {Object.entries(mediaStreamList).map(([id, mediaStream]) => (
-        <RoomStream key={id} mediaStream={mediaStream} />
+      {Object.entries(mediaStreamList).map(([id, { stream }]) => (
+        <RoomStream key={id} mediaStream={stream} />
       ))}
     </div>
   )
 }
 
-type MediaStreamReducerState = { [streamID: string]: MediaStream }
+type StreamContext = {
+  stream: MediaStream,
+  originList: Array<RTCTrackEvent>
+}
 
-type SetMediaStreamAction = { [streamID: string]: MediaStream | undefined }
+type MediaStreamContextReducer = { [streamID: string]: StreamContext }
+
+type DeleteStreamEvent = undefined
+type OriginTrackEvent = { [streamID: string]: RTCTrackEvent | DeleteStreamEvent }
 
 function App() {
 

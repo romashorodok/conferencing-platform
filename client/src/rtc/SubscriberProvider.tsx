@@ -9,7 +9,13 @@ type SubscriberContextType = {
 export const SubscriberContext = createContext<SubscriberContextType>(undefined as never)
 
 function SubscriberContextProvider({ children }: PropsWithChildren<{}>) {
-  const [subscriber, setSubscriber] = useState<RTCEngine>(new RTCEngine())
+  const [subscriber, setSubscriber] = useState<RTCEngine>(new RTCEngine({
+    iceServers: [
+      {
+        urls: 'stun:stun.l.google.com:19302'
+      },
+    ]
+  }))
 
   useEffect(() => {
     return () => {

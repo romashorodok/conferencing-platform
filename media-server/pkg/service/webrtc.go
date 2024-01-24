@@ -3,15 +3,29 @@ package service
 import (
 	"log/slog"
 
+	ice "github.com/pion/ice/v3"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/intervalpli"
 	webrtc "github.com/pion/webrtc/v3"
+	"github.com/romashorodok/conferencing-platform/media-server/pkg/variables"
 	"go.uber.org/fx"
 )
 
 type webrtcAPI_Params struct {
 	fx.In
 }
+
+var (
+	ONE_TO_NAT_PUBLIC_IP = variables.Env(
+		variables.WEBRTC_ONE_TO_NAT_PUBLIC_IP,
+		variables.WEBRTC_ONE_TO_NAT_PUBLIC_IP_DEFAULT,
+	)
+
+	WEBRTC_PORT = variables.Env(
+		variables.WEBRTC_UDP_PORT,
+		variables.WEBRTC_UDP_PORT_DEFAULT,
+	)
+)
 
 func webrtcAPI(params webrtcAPI_Params) (*webrtc.API, error) {
 	mediaEngine := &webrtc.MediaEngine{}
@@ -24,6 +38,22 @@ func webrtcAPI(params webrtcAPI_Params) (*webrtc.API, error) {
 	mediaSettings.SetNetworkTypes([]webrtc.NetworkType{
 		webrtc.NetworkTypeUDP4,
 	})
+
+	udpPort, err := variables.ParseInt(WEBRTC_PORT)
+	if err != nil {
+		return nil, err
+	}
+
+	udpMux, err := ice.NewMultiUDPMuxFromPort(udpPort)
+	if err != nil {
+		return nil, err
+	}
+
+	mediaSettings.SetICEUDPMux(udpMux)
+
+	if ONE_TO_NAT_PUBLIC_IP != "" {
+		mediaSettings.SetNAT1To1IPs([]string{ONE_TO_NAT_PUBLIC_IP}, webrtc.ICECandidateTypeHost)
+	}
 
 	interceptorRegistry := &interceptor.Registry{}
 	pli, err := intervalpli.NewReceiverInterceptor()
