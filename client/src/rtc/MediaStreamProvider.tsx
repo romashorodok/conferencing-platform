@@ -36,6 +36,8 @@ const audioStream = navigator.mediaDevices.getUserMedia({
   audio: audioConfig,
 });
 
+const worker = new Worker(new URL('workers/background-blur-webgl.js', import.meta.url), { type: 'classic' })
+
 const mediaStream = new Promise<MediaStream>(async (resolve, reject) => {
   const stream = new MediaStream()
   const tracks: Array<MediaStreamTrack> = []
@@ -43,7 +45,25 @@ const mediaStream = new Promise<MediaStream>(async (resolve, reject) => {
   try {
     const video = await videoStream
     const [track] = video.getVideoTracks()
-    tracks.push(track)
+
+    // NOTE: Insertable streams works only in chrome based browsers
+    // @ts-ignore
+    const { readable: cameraReadable } = new MediaStreamTrackProcessor({ track });
+
+    // @ts-ignore
+    const composedTrack = new MediaStreamTrackGenerator({ kind: 'video' });
+    const { writable: sink } = composedTrack;
+
+    worker.postMessage({
+      operation: 'compose',
+      cameraReadable,
+      sink,
+    }, [
+      cameraReadable,
+      sink,
+    ]);
+
+    tracks.push(composedTrack)
   } catch (err) {
     console.error(err)
   }

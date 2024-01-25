@@ -3,6 +3,7 @@ import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
 import cameraSvg from './assets/camera.svg'
 import microphoneSvg from './assets/microphone.svg'
+import infoSvg from './assets/info.svg'
 import './App.css'
 import { isChromiumBased } from './helpers'
 import { SignalContext } from './rtc/SignalProvider'
@@ -581,7 +582,9 @@ function RoomStream({
     <div className={`relative`}>
       <RoomParticipant mediaStream={mediaStream} isLoading={isLoading} />
       <RoomStatContainer show={showStats} streamID={mediaStream.id} statList={statList} >
-        <button onClick={() => setShowStats(!showStats)}>Show</button>
+        <button onClick={() => setShowStats(!showStats)}>
+          <img className={`w-[22px] h-[22px] filter-white`} src={infoSvg} />
+        </button>
       </RoomStatContainer>
     </div>
   )
@@ -624,6 +627,7 @@ function App() {
       <CameraComponent />
       <Room />
 
+      <img id="image" src={reactLogo} className="logo react" alt="React logo" />
       <div>
         <h3> Remote Video </h3>
         <div id="remoteVideos"></div> <br />
