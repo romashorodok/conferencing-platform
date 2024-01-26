@@ -273,17 +273,35 @@ function usePublisher() {
 
   const publish = useCallback(async () => {
     try {
-      const stream = await mediaStream
+      const stream = mediaStream
       stream.getTracks().forEach(t => {
         subscriber.peerConnection?.addTrack(t, stream)
       })
     } catch { }
   }, [subscriber, mediaStream])
 
-  useEffect(() => () => {
-    subscriber?.peerConnection?.getSenders().forEach(s => {
-      subscriber.peerConnection?.removeTrack(s)
+  useEffect(() => {
+    const videoSenders = subscriber.peerConnection?.getSenders().filter(t => t.track?.kind === 'video')
+    const audioSenders = subscriber.peerConnection?.getSenders().filter(t => t.track?.kind === 'audio')
+
+    videoSenders?.forEach(s => {
+      mediaStream.getVideoTracks().forEach(t => {
+        s.replaceTrack(t)
+      })
     })
+
+    audioSenders?.forEach(s => {
+      mediaStream.getAudioTracks().forEach(t => {
+        s.replaceTrack(t)
+      })
+    })
+
+    return () => {
+      subscriber?.peerConnection?.getSenders().forEach(s => {
+        s.replaceTrack(null)
+        // subscriber.peerConnection?.removeTrack(s)
+      })
+    }
   }, [mediaStream, subscriber])
 
   return { publish }
@@ -346,7 +364,9 @@ function CameraComponent() {
   }, [isAudioMuted, mediaStream])
 
   useEffect(() => {
-    mediaStream.then(s => { video.current!.srcObject = s })
+    if (mediaStream) {
+      video.current!.srcObject = mediaStream
+    }
   }, [video, mediaStream])
 
   return (
@@ -614,7 +634,7 @@ type DeleteStreamEvent = undefined
 type OriginTrackEvent = { [streamID: string]: RTCTrackEvent | DeleteStreamEvent }
 
 function App() {
-
+  const { startFaceDetection, startNormal } = useContext(MediaStreamContext)
 
   // const { join } = useRoom()
 
@@ -624,6 +644,9 @@ function App() {
 
   return (
     <>
+      <button onClick={startNormal}>Normal</button>
+      <button onClick={startFaceDetection}>Face detection</button>
+
       <CameraComponent />
       <Room />
 

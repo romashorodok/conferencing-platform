@@ -9,7 +9,10 @@
 //
 
 self.onmessage = async (event) => {
-  const { cameraReadable, sink } = event.data;
+  const { readable, writable } = event.data;
+
+  console.log("started")
+  console.log(readable, writable)
 
   const { FaceDetector, FilesetResolver } = await import("@mediapipe/tasks-vision");
 
@@ -56,10 +59,10 @@ self.onmessage = async (event) => {
       if (detection) {
         if (detection.boundingBox) {
           const left = detection.boundingBox.originX;
-          const top = height - (detection.boundingBox.height + detection.boundingBox.originY);
+          const top = detection.boundingBox.originY
 
           ctx.strokeStyle = 'red';
-          ctx.lineWidth = 1;
+          ctx.lineWidth = 4;
 
           ctx.strokeRect(left, top, detection.boundingBox.width, detection.boundingBox.height);
         }
@@ -69,5 +72,5 @@ self.onmessage = async (event) => {
     }
   });
 
-  cameraReadable.pipeThrough(transformer).pipeTo(sink);
+  readable.pipeThrough(transformer).pipeTo(writable);
 }

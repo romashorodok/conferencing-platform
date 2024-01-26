@@ -1,12 +1,15 @@
-import { PropsWithChildren, createContext, useEffect, useState } from "react";
+import { PropsWithChildren, createContext, useContext, useEffect, useState } from "react";
 import { isChromiumBased } from "../helpers";
 
 type MediaStreamContextType = {
-  mediaStream: Promise<MediaStream>
+  mediaStream: MediaStream
   mediaStreamReady: boolean
 
   setAudioMute: (mute: boolean) => Promise<void>
   setVideoMute: (mute: boolean) => Promise<void>
+
+  startFaceDetection: () => void
+  startNormal: () => void
 };
 
 export const MediaStreamContext = createContext<MediaStreamContextType>(undefined!)
@@ -36,53 +39,6 @@ const audioStream = navigator.mediaDevices.getUserMedia({
   audio: audioConfig,
 });
 
-const worker = new Worker(new URL('workers/background-blur-webgl.js', import.meta.url), { type: 'classic' })
-
-const mediaStream = new Promise<MediaStream>(async (resolve, reject) => {
-  const stream = new MediaStream()
-  const tracks: Array<MediaStreamTrack> = []
-
-  try {
-    const video = await videoStream
-    const [track] = video.getVideoTracks()
-
-    // NOTE: Insertable streams works only in chrome based browsers
-    // @ts-ignore
-    const { readable: cameraReadable } = new MediaStreamTrackProcessor({ track });
-
-    // @ts-ignore
-    const composedTrack = new MediaStreamTrackGenerator({ kind: 'video' });
-    const { writable: sink } = composedTrack;
-
-    worker.postMessage({
-      operation: 'compose',
-      cameraReadable,
-      sink,
-    }, [
-      cameraReadable,
-      sink,
-    ]);
-
-    tracks.push(composedTrack)
-  } catch (err) {
-    console.error(err)
-  }
-
-  try {
-    const audio = await audioStream
-    const [track] = audio.getAudioTracks()
-    tracks.push(track)
-  } catch (err) {
-    console.error(err)
-  }
-
-  if (tracks.length <= 0)
-    reject(new Error("Empty tracks"))
-
-  tracks.forEach(t => stream.addTrack(t))
-  resolve(stream)
-})
-
 async function setVideoMute(mute: boolean) {
   const stream = await videoStream
   stream.getVideoTracks().forEach(t => t.enabled = !mute)
@@ -93,15 +49,120 @@ async function setAudioMute(mute: boolean) {
   stream.getAudioTracks().forEach(t => t.enabled = !mute)
 }
 
+const defaultMediaStream =
+  new Promise<MediaStream>(async (resolve, reject) => {
+    const stream = new MediaStream()
+    const tracks: Array<MediaStreamTrack> = []
+
+    try {
+      const video = await videoStream
+      const [track] = video.getVideoTracks()
+      tracks.push(track)
+    } catch (err) {
+      console.error(err)
+    }
+
+    try {
+      const audio = await audioStream
+      const [track] = audio.getAudioTracks()
+      tracks.push(track)
+    } catch (err) {
+      console.error(err)
+    }
+
+    if (tracks.length <= 0)
+      reject(new Error("Empty tracks"))
+
+    tracks.forEach(t => stream.addTrack(t))
+    resolve(stream)
+
+  })
+
+const faceDetectionMediaStream = (faceDetectorWorker: Worker): Promise<MediaStream> =>
+  new Promise(async (resolve, reject) => {
+    if (!isChromiumBased()) {
+      reject("support only chromium based browsers")
+    }
+
+    try {
+      let stream = await defaultMediaStream
+      stream = stream.clone()
+
+      const [track] = stream.getVideoTracks()
+      stream.removeTrack(track)
+
+      const { readable } = new MediaStreamTrackProcessor({ track })
+      const localTrack = new MediaStreamTrackGenerator({ kind: 'video' })
+      const { writable } = localTrack
+
+      faceDetectorWorker.postMessage({
+        readable,
+        writable,
+      }, [readable, writable])
+
+      stream.addTrack(localTrack)
+
+      resolve(stream)
+    } catch (e) {
+      reject(e)
+    }
+  })
+
+async function startFaceDetectionStream(
+): Promise<{
+  stream: MediaStream,
+  worker: Worker
+}> {
+  const faceDetectorWorker = new Worker(new URL('workers/faceDetector.js', import.meta.url), { type: 'classic' })
+  return {
+    stream: await faceDetectionMediaStream(faceDetectorWorker),
+    worker: faceDetectorWorker
+  }
+}
+
 function MediaStreamProvider({ children }: PropsWithChildren<{}>) {
+  const [mediaStream, setMediaStream] = useState<MediaStream>()
   const [mediaStreamReady, setMediaStreamReady] = useState(false)
+  const [worker, setWorker] = useState<Worker>()
+
+  function startNormal() {
+    defaultMediaStream
+      .then(stream => {
+        setMediaStream(stream)
+        setMediaStreamReady(true)
+      })
+  }
+
+  function startFaceDetection() {
+    if (isChromiumBased()) {
+      startFaceDetectionStream()
+        .then(({ stream, worker }) => {
+          setMediaStream(stream)
+          setMediaStreamReady(true)
+          setWorker(worker)
+        })
+    } else {
+      console.warn("Face detection work only in chromium based browsers")
+      startNormal()
+    }
+  }
 
   useEffect(() => {
-    mediaStream.then(_ => setMediaStreamReady(true))
+    startNormal()
   }, [])
 
+  useEffect(() => {
+    console.log("Cammer changed")
+    return () => {
+      if (worker) {
+        worker.terminate()
+        setWorker(undefined)
+      }
+    }
+  }, [mediaStream])
+
   return (
-    <MediaStreamContext.Provider value={{ mediaStream, mediaStreamReady, setAudioMute, setVideoMute }}>
+    <MediaStreamContext.Provider value={{ mediaStream, mediaStreamReady, setAudioMute, setVideoMute, startNormal, startFaceDetection }}>
       {children}
     </MediaStreamContext.Provider>
   )
