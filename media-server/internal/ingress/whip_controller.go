@@ -2,6 +2,7 @@ package ingress
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,8 +20,11 @@ import (
 	echo "github.com/labstack/echo/v4"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
+	"github.com/pion/sdp/v3"
 	webrtc "github.com/pion/webrtc/v3"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/protocol"
+	"github.com/romashorodok/conferencing-platform/media-server/pkg/rtpstats"
+	"github.com/romashorodok/conferencing-platform/media-server/pkg/twcc"
 	"github.com/romashorodok/conferencing-platform/pkg/controller/ingress"
 	globalprotocol "github.com/romashorodok/conferencing-platform/pkg/protocol"
 	"go.uber.org/atomic"
@@ -71,6 +76,9 @@ type whipController struct {
 	roomService protocol.RoomService
 	logger      *slog.Logger
 	webrtc      *webrtc.API
+	stats       <-chan *rtpstats.RtpStats
+
+	peerConnectionMu sync.Mutex
 }
 
 // WebrtcHttpIngestionControllerWebrtcHttpIngest implements ingress.ServerInterface.
@@ -102,6 +110,8 @@ var upgrader = websocket.Upgrader{
 type PeerContext struct {
 	subscriber          *Subscriber
 	negotiationDataChan *webrtc.DataChannel
+	stats               *rtpstats.RtpStats
+	twcc                *twcc.Responder
 }
 
 type SdpDescription struct {
@@ -371,11 +381,16 @@ func (ctrl *whipController) WebrtcHttpIngestionControllerWebsocketRtcSignal(ctx 
 		}
 	}()
 
-	peerConnection, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	log.Println("PeerConnection lock")
+	ctrl.peerConnectionMu.Lock()
+	peerConnection, err := ctrl.webrtc.NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
 		log.Println("Unable create subscriber peer")
 		return err
 	}
+	peerContext.stats = <-ctrl.stats
+	ctrl.peerConnectionMu.Unlock()
+	log.Println("PeerConnection unlock")
 
 	subscriberConnCtx, subscriberConnCtxCancel := context.WithCancelCause(ctx.Request().Context())
 	_ = subscriberConnCtx
@@ -418,7 +433,7 @@ func (ctrl *whipController) WebrtcHttpIngestionControllerWebsocketRtcSignal(ctx 
 		})
 	})
 
-	peerContext.subscriber.peerConnection.OnTrack(func(t *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
+	peerContext.subscriber.peerConnection.OnTrack(func(t *webrtc.TrackRemote, recv *webrtc.RTPReceiver) {
 		defer func() {
 			for _, subs := range subscriberPool.Get() {
 				_ = subs.DeleteTrack(t.ID())
@@ -428,6 +443,33 @@ func (ctrl *whipController) WebrtcHttpIngestionControllerWebsocketRtcSignal(ctx 
 		var threshold uint64 = 1000000
 		var step uint64 = 2
 		log.Println("On track", t.ID())
+
+		var twccExt uint8
+		for _, fb := range t.Codec().RTCPFeedback {
+			switch fb.Type {
+			case webrtc.TypeRTCPFBGoogREMB:
+			case webrtc.TypeRTCPFBNACK:
+				log.Println("Unsupported rtcp feedback")
+				continue
+
+			case webrtc.TypeRTCPFBTransportCC:
+				if strings.HasPrefix(t.Codec().MimeType, "video") {
+					for _, ext := range recv.GetParameters().HeaderExtensions {
+						if ext.URI == sdp.TransportCCURI {
+							twccExt = uint8(ext.ID)
+							break
+						}
+					}
+				}
+			}
+		}
+
+		peerContext.twcc = twcc.NewTransportWideCCResponder(uint32(t.SSRC()))
+		peerContext.twcc.OnFeedback(func(pkts []rtcp.Packet) {
+			if err := peerContext.subscriber.peerConnection.WriteRTCP(pkts); err != nil {
+				log.Printf("transport-cc | %s", err)
+			}
+		})
 
 		for {
 			select {
@@ -442,6 +484,12 @@ func (ctrl *whipController) WebrtcHttpIngestionControllerWebsocketRtcSignal(ctx 
 					return
 				}
 				continue
+			}
+
+			if peerContext.twcc != nil && twccExt != 0 {
+				if ext := pkt.GetExtension(twccExt); ext != nil {
+					peerContext.twcc.Push(binary.BigEndian.Uint16(ext[0:2]), time.Now().UnixNano(), pkt.Marker)
+				}
 			}
 
 			subscribers := subscriberPool.Get()
@@ -771,11 +819,15 @@ type newWhipController_Params struct {
 
 	RoomService protocol.RoomService
 	Logger      *slog.Logger
+	API         *webrtc.API
+	RtpStatsCh  chan *rtpstats.RtpStats
 }
 
 func NewWhipController(params newWhipController_Params) *whipController {
 	return &whipController{
 		roomService: params.RoomService,
 		logger:      params.Logger,
+		webrtc:      params.API,
+		stats:       params.RtpStatsCh,
 	}
 }

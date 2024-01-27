@@ -556,6 +556,8 @@ function RoomStatContainer({
   )
 }
 
+const FRAMES_DECODED_STOP_LOADING = 1
+
 function RoomStream({
   mediaStream,
 }: { mediaStream: MediaStream }) {
@@ -593,7 +595,7 @@ function RoomStream({
     if (!isLoading) return
 
     const decodedFramesCount = statList.get(TrackKind.Video)?.framesDecoded
-    if (decodedFramesCount && decodedFramesCount >= 30) {
+    if (decodedFramesCount && decodedFramesCount >= FRAMES_DECODED_STOP_LOADING) {
       setIsLoading(false)
     }
   }, [statList])
