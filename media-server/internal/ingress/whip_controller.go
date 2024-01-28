@@ -467,7 +467,7 @@ func (ctrl *whipController) WebrtcHttpIngestionControllerWebsocketRtcSignal(ctx 
 		peerContext.twcc = twcc.NewTransportWideCCResponder(uint32(t.SSRC()))
 		peerContext.twcc.OnFeedback(func(pkts []rtcp.Packet) {
 			if err := peerContext.subscriber.peerConnection.WriteRTCP(pkts); err != nil {
-				log.Printf("transport-cc | %s", err)
+				log.Printf("transport-cc ERROR | %s", err)
 			}
 		})
 

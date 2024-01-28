@@ -9,7 +9,7 @@ import { isChromiumBased } from './helpers'
 import { SignalContext } from './rtc/SignalProvider'
 import { EventEmitter } from 'events';
 import { SubscriberContext } from './rtc/SubscriberProvider'
-import { MediaStreamContext } from './rtc/MediaStreamProvider'
+import { MediaStreamContext, setAudioMute, setVideoMute } from './rtc/MediaStreamProvider'
 import * as Popover from '@radix-ui/react-popover';
 import * as ScrollArea from '@radix-ui/react-scroll-area';
 import LoadingDots from './base/loading-dots'
@@ -347,20 +347,20 @@ function CameraComponent() {
   const {
     mediaStream,
     mediaStreamReady,
-    setVideoMute,
-    setAudioMute,
   } = useContext(MediaStreamContext)
-  const [isVideoMuted, setVideoMuted] = useState(true);
-  const [isAudioMuted, setAudioMuted] = useState(true);
+  const [isVideoMuted, setVideoMuted] = useState<boolean>(mediaStream?.getVideoTracks()[0].enabled || true);
+  const [isAudioMuted, setAudioMuted] = useState<boolean>(mediaStream?.getAudioTracks()[0].enabled || true);
 
   const video = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    setVideoMute(isVideoMuted)
+    if (mediaStream)
+      setVideoMute(mediaStream, isVideoMuted)
   }, [isVideoMuted, mediaStream])
 
   useEffect(() => {
-    setAudioMute(isAudioMuted)
+    if (mediaStream)
+      setAudioMute(mediaStream, isAudioMuted)
   }, [isAudioMuted, mediaStream])
 
   useEffect(() => {

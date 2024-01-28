@@ -1,12 +1,9 @@
-import { PropsWithChildren, createContext, useContext, useEffect, useState } from "react";
+import { PropsWithChildren, createContext, useEffect, useState } from "react";
 import { isChromiumBased } from "../helpers";
 
 type MediaStreamContextType = {
-  mediaStream: MediaStream
+  mediaStream: MediaStream | undefined
   mediaStreamReady: boolean
-
-  setAudioMute: (mute: boolean) => Promise<void>
-  setVideoMute: (mute: boolean) => Promise<void>
 
   startFaceDetection: () => void
   startNormal: () => void
@@ -39,13 +36,11 @@ const audioStream = navigator.mediaDevices.getUserMedia({
   audio: audioConfig,
 });
 
-async function setVideoMute(mute: boolean) {
-  const stream = await videoStream
+export async function setVideoMute(stream: MediaStream, mute: boolean) {
   stream.getVideoTracks().forEach(t => t.enabled = !mute)
 }
 
-async function setAudioMute(mute: boolean) {
-  const stream = await audioStream
+export async function setAudioMute(stream: MediaStream, mute: boolean) {
   stream.getAudioTracks().forEach(t => t.enabled = !mute)
 }
 
@@ -85,10 +80,20 @@ const faceDetectionMediaStream = (faceDetectorWorker: Worker): Promise<MediaStre
     }
 
     try {
-      let stream = await defaultMediaStream
-      stream = stream.clone()
+      let defaultStream = await defaultMediaStream.then(m => {
+        console.log(m)
+        return m
+      })
+      const stream = defaultStream.clone()
+      stream.getTracks().forEach(t => {
+        t.enabled = true
+        const track = t.clone()
+        stream.removeTrack(t)
+        stream.addTrack(track)
+      })
 
       const [track] = stream.getVideoTracks()
+      // NOTE: need remove origin track it will be replaced by sink track
       stream.removeTrack(track)
 
       const { readable } = new MediaStreamTrackProcessor({ track })
@@ -101,6 +106,8 @@ const faceDetectionMediaStream = (faceDetectorWorker: Worker): Promise<MediaStre
       }, [readable, writable])
 
       stream.addTrack(localTrack)
+
+      stream.getTracks().forEach(t => t.enabled = false)
 
       resolve(stream)
     } catch (e) {
@@ -162,7 +169,7 @@ function MediaStreamProvider({ children }: PropsWithChildren<{}>) {
   }, [mediaStream])
 
   return (
-    <MediaStreamContext.Provider value={{ mediaStream, mediaStreamReady, setAudioMute, setVideoMute, startNormal, startFaceDetection }}>
+    <MediaStreamContext.Provider value={{ mediaStream, mediaStreamReady, startNormal, startFaceDetection }}>
       {children}
     </MediaStreamContext.Provider>
   )
