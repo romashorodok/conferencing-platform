@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
 import "openapiv3/OpenAPIv3.proto";
 import "openapiv3/annotations.proto";
 import "model/room_model.proto";
@@ -61,14 +62,24 @@ service RoomController {
       get: "/rooms";
     };
   };
+
+  rpc RoomJoin(RoomJoinRequest) returns (RoomJoinResponse) {
+    option(google.api.http) = {
+      get: "/rooms/{room_id}";
+    };
+  };
 }
 
 message RoomCreateRequest {
-  reserved 1, 2, 3;
+  string room_id = 1;
+  reserved 2, 3;
   int32 max_participants = 4;
 }
+
 message RoomCreateResponse {
-  room.model.Room room = 1;
+  room.model.Room room = 1 [
+    (google.api.field_behavior) = REQUIRED
+  ];
 }
 
 message RoomDeleteRequest { }
@@ -76,6 +87,13 @@ message RoomDeleteResponse { }
 
 message RoomListRequest { }
 message RoomListResponse {
-  repeated room.model.Room rooms = 1;
+  repeated room.model.Room rooms = 1 [
+    (google.api.field_behavior) = REQUIRED
+  ];
 }
 
+message RoomJoinRequest {
+}
+
+message RoomJoinResponse {
+}

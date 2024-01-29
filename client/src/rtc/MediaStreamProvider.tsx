@@ -2,7 +2,7 @@ import { PropsWithChildren, createContext, useEffect, useState } from "react";
 import { isChromiumBased } from "../helpers";
 
 type MediaStreamContextType = {
-  mediaStream: MediaStream | undefined
+  mediaStream: MediaStream
   mediaStreamReady: boolean
 
   startFaceDetection: () => void
@@ -169,6 +169,7 @@ function MediaStreamProvider({ children }: PropsWithChildren<{}>) {
   }, [mediaStream])
 
   return (
+    // @ts-ignore
     <MediaStreamContext.Provider value={{ mediaStream, mediaStreamReady, startNormal, startFaceDetection }}>
       {children}
     </MediaStreamContext.Provider>

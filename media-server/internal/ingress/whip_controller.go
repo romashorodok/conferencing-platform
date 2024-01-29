@@ -22,7 +22,6 @@ import (
 	"github.com/pion/rtp"
 	"github.com/pion/sdp/v3"
 	webrtc "github.com/pion/webrtc/v3"
-	"github.com/romashorodok/conferencing-platform/media-server/pkg/protocol"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/rtpstats"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/twcc"
 	"github.com/romashorodok/conferencing-platform/pkg/controller/ingress"
@@ -73,10 +72,10 @@ func ParallelExec[T any](vals []T, parallelThreshold, step uint64, fn func(T)) {
 var INGEST_ANSWER_TYPE = "answer"
 
 type whipController struct {
-	roomService protocol.RoomService
-	logger      *slog.Logger
-	webrtc      *webrtc.API
-	stats       <-chan *rtpstats.RtpStats
+	// roomService protocol.RoomService
+	logger *slog.Logger
+	webrtc *webrtc.API
+	stats  <-chan *rtpstats.RtpStats
 
 	peerConnectionMu sync.Mutex
 }
@@ -817,17 +816,17 @@ var (
 type newWhipController_Params struct {
 	fx.In
 
-	RoomService protocol.RoomService
-	Logger      *slog.Logger
-	API         *webrtc.API
-	RtpStatsCh  chan *rtpstats.RtpStats
+	// RoomService protocol.RoomService
+	Logger     *slog.Logger
+	API        *webrtc.API
+	RtpStatsCh chan *rtpstats.RtpStats
 }
 
 func NewWhipController(params newWhipController_Params) *whipController {
 	return &whipController{
-		roomService: params.RoomService,
-		logger:      params.Logger,
-		webrtc:      params.API,
-		stats:       params.RtpStatsCh,
+		// roomService: params.RoomService,
+		logger: params.Logger,
+		webrtc: params.API,
+		stats:  params.RtpStatsCh,
 	}
 }

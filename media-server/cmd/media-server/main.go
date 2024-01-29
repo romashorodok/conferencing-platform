@@ -14,7 +14,7 @@ import (
 type CreateTestRoom_Params struct {
 	fx.In
 
-	RoomService protocol.RoomService
+	*room.RoomService
 }
 
 func CreateTestRoom(params CreateTestRoom_Params) {
@@ -34,13 +34,10 @@ func CreateTestRoom(params CreateTestRoom_Params) {
 func main() {
 	fx.New(
 		fx.Provide(
+			room.NewRoomService,
+
 			globalprotocol.AsHttpController(ingress.NewWhipController),
 			globalprotocol.AsHttpController(room.NewRoomController),
-
-			fx.Annotate(
-				room.NewRoomService,
-				fx.As(new(protocol.RoomService)),
-			),
 		),
 
 		fx.Module("test-room",

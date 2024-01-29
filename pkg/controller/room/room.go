@@ -24,34 +24,35 @@ const (
 
 // Participant defines model for Participant.
 type Participant struct {
-	Id   *string `json:"id,omitempty"`
-	Name *string `json:"name,omitempty"`
+	Id string `json:"id"`
 }
 
 // Room defines model for Room.
 type Room struct {
-	Host         *string        `json:"host,omitempty"`
-	Participants *[]Participant `json:"participants,omitempty"`
-	Port         *string        `json:"port,omitempty"`
-	SessionID    *string        `json:"sessionID,omitempty"`
+	Participants []Participant `json:"participants"`
+	RoomId       string        `json:"roomId"`
 }
 
 // RoomCreateRequest defines model for RoomCreateRequest.
 type RoomCreateRequest struct {
-	MaxParticipants *int32 `json:"maxParticipants,omitempty"`
+	MaxParticipants *int32  `json:"maxParticipants,omitempty"`
+	RoomId          *string `json:"roomId,omitempty"`
 }
 
 // RoomCreateResponse defines model for RoomCreateResponse.
 type RoomCreateResponse struct {
-	Room *Room `json:"room,omitempty"`
+	Room Room `json:"room"`
 }
 
 // RoomDeleteResponse defines model for RoomDeleteResponse.
 type RoomDeleteResponse = map[string]interface{}
 
+// RoomJoinResponse defines model for RoomJoinResponse.
+type RoomJoinResponse = map[string]interface{}
+
 // RoomListResponse defines model for RoomListResponse.
 type RoomListResponse struct {
-	Rooms *[]Room `json:"rooms,omitempty"`
+	Rooms []Room `json:"rooms"`
 }
 
 // RoomControllerRoomCreateJSONRequestBody defines body for RoomControllerRoomCreate for application/json ContentType.
@@ -65,6 +66,9 @@ type ServerInterface interface {
 
 	// (POST /rooms)
 	RoomControllerRoomCreate(ctx echo.Context) error
+
+	// (GET /rooms/{room_id})
+	RoomControllerRoomJoin(ctx echo.Context, roomId string) error
 
 	// (DELETE /rooms/{sessionID})
 	RoomControllerRoomDelete(ctx echo.Context, sessionID string) error
@@ -92,6 +96,22 @@ func (w *ServerInterfaceWrapper) RoomControllerRoomCreate(ctx echo.Context) erro
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.RoomControllerRoomCreate(ctx)
+	return err
+}
+
+// RoomControllerRoomJoin converts echo context to params.
+func (w *ServerInterfaceWrapper) RoomControllerRoomJoin(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "room_id" -------------
+	var roomId string
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "room_id", runtime.ParamLocationPath, ctx.Param("room_id"), &roomId)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter room_id: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.RoomControllerRoomJoin(ctx, roomId)
 	return err
 }
 
@@ -141,6 +161,7 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 
 	router.GET(baseURL+"/rooms", wrapper.RoomControllerRoomList)
 	router.POST(baseURL+"/rooms", wrapper.RoomControllerRoomCreate)
+	router.GET(baseURL+"/rooms/:room_id", wrapper.RoomControllerRoomJoin)
 	router.DELETE(baseURL+"/rooms/:sessionID", wrapper.RoomControllerRoomDelete)
 
 }
@@ -148,15 +169,16 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"H4sIAAAAAAAC/7RUzW7bTAx8lQ/8ehQsNb7pljSXoAVqpEdDh41EWxtIu1suXdQw9O4FKcs/suK6RXOx",
-	"JXGXnBkOuYPSt8E7dBwh30Esa2yNPi4MsS1tMI7lNZAPSGxRg7aSX94GhBwik3Vr6BJwpsWJQJcMX/zL",
-	"K5YsR5+9by/z1j7yZOZwRNMDYGz14QPhCnL4Pz0SSfcs0lMKRwyGyGw1p6fpYhFjtN49Pf4Bl0+EhvEZ",
-	"v28wTgjWmp+LEYWVp9Yw5GAdz+/gkNc6xjXS70vF4F3Ey1q0l/aaNCr/mxUescHzCpPHvtjI12Hc3qse",
-	"0LhJlwC1PeWGLG+/ydW+1gMaQrrfcH1wsVx60c9HaWvmAJ3ksG7llZflRiKqq3dMvmmQ/rtfPEECP5DE",
-	"B5BDNstmHwWeD+hMsJDDfJbN5iDO5FoxpAfCa1QHiBiGxUjVRYVBPkiA9grq1bssk7/SO8Z+8EwIjS01",
-	"T/oaBc0wprdIetYiZV5hLMkG7ol9/dyLbNYR8uUIJBQ6JfEmNr0rlY/OwIOvtv+UyvmEKRcpZQkryJk2",
-	"2L2zlqO5e1vNwaCQL8+tuSy64orYXbI3Ubo7rKBOkFU6j7d0oZ9ctSWZFhkpKgor8MSqMGzpky03FjI5",
-	"EWW8/op3Fnm0ev7CsifB3cB1dKgrul8BAAD//xZX+PT6BgAA",
+	"H4sIAAAAAAAC/8yUT2/bPAzGv8oLvjsacdbcfGvXS7YBC7pjYAyqzSQqYkmlmGFBoO8+UMo/u07qFSuw",
+	"S2zHMvnwx4fcQWUbZw0a9lDswFcrbFS8nSliXWmnDMujI+uQWGN8qWv55a1DKMAzabOEEDIgfN5owhqK",
+	"uZwps8MZ+/iEFUPI4MHa5mVAd8qWEjA28eYD4QIK+D8/Cc33KvNzieGYShGprTyTtc10gND9uawt4pL2",
+	"T4SK8QGfN+h7yDTq16xTy8JSoxgK0IYnN3CMqw3jEuk1qVdVeGeNx5cyaE/5Gr7YiT4YF2u/xzW2s/Ye",
+	"+2y1efXQV+35uv7hRkiVdB3QU1lfW0MGHqsNad5+l3hJwB0qQrrd8Oo4F/LRY/z71MMVs4MgMbRZ2Fis",
+	"5rW8iV2yhsmu10j/3c6mkMFPJK+tgQLGo/Hoo2i2Do1yGgqYjMajSbQhr6KG/EhhidFqQkixtka80slw",
+	"YApSdcIaP70Zj+VSWcOYRlk5t9ZVjJM/eVFzGPwhnFt9i5XX6CvSjlNh374k16qlF+ptkVCGDJz1g6pJ",
+	"HofURfR8Z+vtXy2lPcqhbRimDYZ3ZtmZ4ss0DwaFYt625rwM5RXYIdubKN/J5Yeuwx/YSeY4rUXVICP5",
+	"mF6LLvEoZGBUnIp9bOjyy85YdBdb+c5sW0voDT49Q+fRy9RO7yO8Oi7BIfzSuhxE8Jjin2LY2fdvoXh6",
+	"uTvU2jkUyvA7AAD//5kb0tSHCAAA",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file
