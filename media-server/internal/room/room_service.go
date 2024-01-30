@@ -86,7 +86,6 @@ func NewTrackContext(params NewTrackContextParams) *TrackContext {
 
 type LoopbackTrackContext struct {
 	*TrackContext
-	transceiver *webrtc.RTPTransceiver
 }
 
 type Subscriber struct {
@@ -200,28 +199,16 @@ func (s *Subscriber) LoopbackTrack(t *webrtc.TrackRemote, recv *webrtc.RTPReceiv
 		return nil, err
 	}
 
-	transceiver, err := s.peerConnection.AddTransceiverFromTrack(trackCtx.track, webrtc.RTPTransceiverInit{
-		// Recvonly not supported
-		Direction: webrtc.RTPTransceiverDirectionSendonly,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	// NOTE: When new negotiation will be it's will be displayed as video
-	// NOTE: To mute track need `webrtc.RTPTransceiverDirectionInactive`
-	// Disable loopback sending, or may even replace the track
-	// transceiver.SetSender(transceiver.Sender(), nil)
-
 	s.loopback[trackCtx.track.ID()] = &LoopbackTrackContext{
 		TrackContext: trackCtx,
-		transceiver:  transceiver,
 	}
 
 	return s.loopback[trackCtx.track.ID()], nil
 }
 
 func (s *Subscriber) GetLoopbackTrack(trackID string) (track *LoopbackTrackContext, exist bool) {
+	s.tracksMu.Lock()
+	defer s.tracksMu.Unlock()
 	track, exist = s.loopback[trackID]
 	return
 }

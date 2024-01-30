@@ -210,6 +210,7 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 				case peerContext.peerID == peer.peerID:
 					track, exist = peer.Subscriber.GetLoopbackTrack(t.ID())
 					if !exist {
+						log.Println("Create loopback track")
 						track, err = peer.Subscriber.LoopbackTrack(t, recv)
 						track.OnFeedback(onTrackFeedback)
 					}
@@ -217,6 +218,7 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 				default:
 					track, exist = peer.Subscriber.HasTrack(t.ID())
 					if !exist {
+						log.Println("Create local track track")
 						track, err = peer.Subscriber.CreateTrack(t, recv)
 						track.OnFeedback(onTrackFeedback)
 					}
@@ -230,8 +232,6 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 				if track == nil {
 					return
 				}
-
-				// go track.WriteRTCPFeedback(pkt)
 
 				// WriteRTP takes about 50µs
 				track.WriteRTP(pkt)
@@ -248,11 +248,11 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 			}
 
 		case webrtc.PeerConnectionStateFailed:
-			peerContext.Cancel(ErrOnStateClosed)
 			peerContext.Close()
+			peerContext.Cancel(ErrOnStateClosed)
 		case webrtc.PeerConnectionStateClosed:
-			peerContext.Cancel(ErrOnStateClosed)
 			peerContext.Close()
+			peerContext.Cancel(ErrOnStateClosed)
 			roomCtx.peerContextPool.SignalPeerContexts()
 		}
 	})
