@@ -24,10 +24,11 @@ import (
 )
 
 var (
-	ErrRoomAlreadyExists = errors.New("room already exists")
-	ErrRoomNotExist      = errors.New("room not exist")
-	ErrRoomIDIsEmpty     = errors.New("room id is empty")
-	ErrRoomCancelByUser  = errors.New("room canceled by user")
+	ErrPeerConnectionClosed = errors.New("peerConnection is closed")
+	ErrRoomAlreadyExists    = errors.New("room already exists")
+	ErrRoomNotExist         = errors.New("room not exist")
+	ErrRoomIDIsEmpty        = errors.New("room id is empty")
+	ErrRoomCancelByUser     = errors.New("room canceled by user")
 )
 
 type TrackCongestionControlWritable interface {
@@ -222,7 +223,57 @@ type PeerContext struct {
 	peerConnection *webrtc.PeerConnection
 	stats          *rtpstats.RtpStats
 	ws             *threadSafeWriter
+	signalMu       sync.Mutex
 	Subscriber     *Subscriber
+}
+
+func (p *PeerContext) signalPeerConnection() (bool, error) {
+	if p.peerConnection.ConnectionState() == webrtc.PeerConnectionStateClosed {
+		return false, ErrPeerConnectionClosed
+	}
+
+	offer, err := p.peerConnection.CreateOffer(nil)
+	if err != nil {
+		return false, err
+	}
+
+	if err = p.peerConnection.SetLocalDescription(offer); err != nil {
+		return false, err
+	}
+
+	offerString, err := json.Marshal(offer)
+	if err != nil {
+		return false, err
+	}
+
+	if err = p.ws.WriteJSON(&websocketMessage{
+		Event: "offer",
+		Data:  string(offerString),
+	}); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (p *PeerContext) SignalPeerConnection() {
+	p.signalMu.Lock()
+	defer p.signalMu.Unlock()
+
+	signal := debounce(p.signalPeerConnection, time.Millisecond*10)
+
+	for syncAttempt := 0; ; syncAttempt++ {
+		if syncAttempt >= 25 {
+			go func() {
+				time.Sleep(time.Millisecond * 60)
+				signal()
+			}()
+			break
+		}
+		success, err := signal()
+		if !errors.Is(err, ErrPeerConnectionClosed) && success {
+			break
+		}
+	}
 }
 
 func (p *PeerContext) NewSubscriber() {
@@ -265,13 +316,13 @@ func NewPeerContext(params NewPeerContextParams) *PeerContext {
 	}
 }
 
-func debounce(fn func() bool, delay time.Duration) func() bool {
+func debounce(fn func() (bool, error), delay time.Duration) func() (bool, error) {
 	var (
 		mu    sync.Mutex
 		last  time.Time
 		timer *time.Timer
 	)
-	return func() (result bool) {
+	return func() (result bool, err error) {
 		mu.Lock()
 		defer mu.Unlock()
 
@@ -281,7 +332,7 @@ func debounce(fn func() bool, delay time.Duration) func() bool {
 
 		elapsed := time.Since(last)
 		if elapsed > delay {
-			result = fn()
+			result, err = fn()
 			last = time.Now()
 			return
 		}
@@ -289,93 +340,22 @@ func debounce(fn func() bool, delay time.Duration) func() bool {
 		timer = time.AfterFunc(delay-elapsed, func() {
 			mu.Lock()
 			defer mu.Unlock()
-			result = fn()
+			result, err = fn()
 			last = time.Now()
 		})
 
-		return result
+		return result, err
 	}
 }
 
 type PeerContextPool struct {
 	subscriberMu sync.Mutex
 	pool         map[string]*PeerContext
-
-	signalPeerContextMu        sync.Mutex
-	debounceSignalPeerContexts func() bool
-}
-
-func (s *PeerContextPool) signalPeerContexts() (retry bool) {
-	for _, ctx := range s.pool {
-		log.Printf("sync attempt %+v", ctx.Subscriber)
-
-		if ctx.peerConnection.ConnectionState() == webrtc.PeerConnectionStateClosed {
-			continue
-		}
-
-		offer, err := ctx.peerConnection.CreateOffer(nil)
-		if err != nil {
-			log.Println("offer error", err)
-			return true
-		}
-
-		if err = ctx.peerConnection.SetLocalDescription(offer); err != nil {
-			log.Println("local desc", err)
-			return true
-		}
-		log.Println("Dispatch offer")
-
-		offerString, err := json.Marshal(offer)
-		if err != nil {
-			return true
-		}
-
-		if err = ctx.ws.WriteJSON(&websocketMessage{
-			Event: "offer",
-			Data:  string(offerString),
-		}); err != nil {
-			return true
-		}
-	}
-	return
-}
-
-func (s *PeerContextPool) pliDispatchKeyFrame() {
-	s.signalPeerContextMu.Lock()
-	defer s.signalPeerContextMu.Unlock()
-
-	for _, peer := range s.pool {
-		for _, receiver := range peer.peerConnection.GetReceivers() {
-			if receiver.Track() == nil {
-				continue
-			}
-			_ = peer.peerConnection.WriteRTCP([]rtcp.Packet{
-				&rtcp.PictureLossIndication{
-					MediaSSRC: uint32(receiver.Track().SSRC()),
-				},
-			})
-		}
-	}
 }
 
 func (s *PeerContextPool) SignalPeerContexts() {
-	s.signalPeerContextMu.Lock()
-	defer func() {
-		s.signalPeerContextMu.Unlock()
-		s.pliDispatchKeyFrame()
-	}()
-
-	for syncAttempt := 0; ; syncAttempt++ {
-		if syncAttempt >= 25 {
-			go func() {
-				time.Sleep(time.Millisecond * 20)
-				s.SignalPeerContexts()
-			}()
-			break
-		}
-		if !s.debounceSignalPeerContexts() {
-			break
-		}
+	for _, peerContext := range s.pool {
+		peerContext.SignalPeerConnection()
 	}
 }
 
@@ -420,11 +400,9 @@ func (s *PeerContextPool) Remove(sub *PeerContext) (err error) {
 }
 
 func NewSubscriberPool() *PeerContextPool {
-	peerContextPool := &PeerContextPool{
+	return &PeerContextPool{
 		pool: make(map[string]*PeerContext),
 	}
-	peerContextPool.debounceSignalPeerContexts = debounce(peerContextPool.signalPeerContexts, time.Millisecond*5)
-	return peerContextPool
 }
 
 type roomContext struct {

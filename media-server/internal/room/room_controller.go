@@ -225,8 +225,7 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 				}
 
 				if err == nil && !exist {
-					// TODO: need try do it by https://github.com/pion/webrtc/blob/v3.2.24/peerconnection.go#L290
-					go roomCtx.peerContextPool.SignalPeerContexts()
+					go peer.SignalPeerConnection()
 				}
 
 				if track == nil {
