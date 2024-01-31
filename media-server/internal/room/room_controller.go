@@ -11,10 +11,11 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	echo "github.com/labstack/echo/v4"
 	"github.com/pion/rtcp"
-	"github.com/pion/webrtc/v3"
+	webrtc "github.com/pion/webrtc/v3"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/protocol"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/rtpstats"
 	"github.com/romashorodok/conferencing-platform/pkg/controller/room"
@@ -23,7 +24,10 @@ import (
 	"go.uber.org/fx"
 )
 
-var ErrOnStateClosed error = errors.New("Closed connection")
+var (
+	ErrOnStateClosed           = errors.New("Closed connection")
+	ErrUnsupportedMessageEvent = errors.New("Unsupported message event")
+)
 
 /* Utils start */
 
@@ -86,6 +90,23 @@ func (t *threadSafeWriter) WriteJSON(val interface{}) error {
 	return t.Conn.WriteJSON(val)
 }
 
+func (t *threadSafeWriter) Close() error {
+	return t.Conn.Close()
+}
+
+func (t *threadSafeWriter) ReadJSON(val any) error {
+	return t.Conn.ReadJSON(val)
+}
+
+func (ctrl *roomController) wsError(w *threadSafeWriter, err error) error {
+	ctrl.logger.Error(fmt.Sprintf("%s | Err: %s", w.Conn.RemoteAddr(), err))
+	w.WriteJSON(&websocketMessage{
+		Event: "error",
+		Data:  "wrong data format",
+	})
+	return err
+}
+
 type roomController struct {
 	roomService      *RoomService
 	stats            <-chan *rtpstats.RtpStats
@@ -93,15 +114,38 @@ type roomController struct {
 	webrtc           *webrtc.API
 	logger           *slog.Logger
 	peerConnectionMu sync.Mutex
+
+	roomStateChanged      chan struct{}
+	notificationListeners map[string]*threadSafeWriter
 }
 
-func (ctrl *roomController) wsError(w *threadSafeWriter, err error) error {
-	ctrl.logger.Error(fmt.Sprintf("%s | Err: %s", w.RemoteAddr(), err))
-	w.WriteJSON(&websocketMessage{
-		Event: "error",
-		Data:  "wrong data format",
-	})
-	return err
+func (ctrl *roomController) RoomControllerRoomNotifier(ctx echo.Context) error {
+	conn, err := ctrl.upgrader.Upgrade(ctx.Response().Writer, ctx.Request(), nil)
+	if err != nil {
+		ctrl.logger.Error(fmt.Sprintf("Unable upgrade request %s", ctx.Request()))
+		return err
+	}
+
+	w := &threadSafeWriter{Conn: conn}
+	defer w.Close()
+
+	id := uuid.NewString()
+	ctrl.notificationListeners[id] = w
+	defer delete(ctrl.notificationListeners, id)
+
+	for {
+		select {
+		case <-ctx.Request().Context().Done():
+			return ErrRoomCancelByUser
+		case <-ctrl.roomStateChanged:
+			for _, listener := range ctrl.notificationListeners {
+				listener.WriteJSON(&websocketMessage{
+					Event: "update-rooms",
+					Data:  "",
+				})
+			}
+		}
+	}
 }
 
 func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId string) error {
@@ -130,7 +174,10 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 	}
 	defer peerContext.Cancel(errors.New("Implicit connection close"))
 	defer peerContext.Close()
-	defer roomCtx.peerContextPool.Remove(peerContext)
+	defer func() {
+		roomCtx.peerContextPool.Remove(peerContext)
+		ctrl.roomStateChanged <- struct{}{}
+	}()
 	peerContext.stats = <-ctrl.stats
 	ctrl.peerConnectionMu.Unlock()
 	peerContext.NewSubscriber()
@@ -244,7 +291,9 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 			if err = roomCtx.peerContextPool.Add(peerContext); err != nil {
 				ctrl.wsError(w, err)
 				peerContext.Cancel(errors.New("Unable add into pool. On PeerConnectionStateConnected"))
+				return
 			}
+			ctrl.roomStateChanged <- struct{}{}
 
 		case webrtc.PeerConnectionStateFailed:
 			peerContext.Close()
@@ -386,10 +435,11 @@ var (
 type newRoomController_Params struct {
 	fx.In
 
-	RoomService *RoomService
-	API         *webrtc.API
-	Logger      *slog.Logger
-	Stats       chan *rtpstats.RtpStats
+	RoomService      *RoomService
+	API              *webrtc.API
+	Logger           *slog.Logger
+	Stats            chan *rtpstats.RtpStats
+	RoomStateChanged chan struct{} `name:"room_state_changed"`
 }
 
 func NewRoomController(params newRoomController_Params) *roomController {
@@ -401,5 +451,7 @@ func NewRoomController(params newRoomController_Params) *roomController {
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
+		roomStateChanged:      params.RoomStateChanged,
+		notificationListeners: make(map[string]*threadSafeWriter),
 	}
 }

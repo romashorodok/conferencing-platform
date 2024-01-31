@@ -55,6 +55,9 @@ type RoomListResponse struct {
 	Rooms []Room `json:"rooms"`
 }
 
+// RoomNotifierResponse defines model for RoomNotifierResponse.
+type RoomNotifierResponse = map[string]interface{}
+
 // RoomControllerRoomCreateJSONRequestBody defines body for RoomControllerRoomCreate for application/json ContentType.
 type RoomControllerRoomCreateJSONRequestBody = RoomCreateRequest
 
@@ -66,6 +69,9 @@ type ServerInterface interface {
 
 	// (POST /rooms)
 	RoomControllerRoomCreate(ctx echo.Context) error
+
+	// (GET /rooms-notifier)
+	RoomControllerRoomNotifier(ctx echo.Context) error
 
 	// (GET /rooms/{room_id})
 	RoomControllerRoomJoin(ctx echo.Context, roomId string) error
@@ -96,6 +102,15 @@ func (w *ServerInterfaceWrapper) RoomControllerRoomCreate(ctx echo.Context) erro
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.RoomControllerRoomCreate(ctx)
+	return err
+}
+
+// RoomControllerRoomNotifier converts echo context to params.
+func (w *ServerInterfaceWrapper) RoomControllerRoomNotifier(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.RoomControllerRoomNotifier(ctx)
 	return err
 }
 
@@ -161,6 +176,7 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 
 	router.GET(baseURL+"/rooms", wrapper.RoomControllerRoomList)
 	router.POST(baseURL+"/rooms", wrapper.RoomControllerRoomCreate)
+	router.GET(baseURL+"/rooms-notifier", wrapper.RoomControllerRoomNotifier)
 	router.GET(baseURL+"/rooms/:room_id", wrapper.RoomControllerRoomJoin)
 	router.DELETE(baseURL+"/rooms/:sessionID", wrapper.RoomControllerRoomDelete)
 
@@ -169,16 +185,16 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"H4sIAAAAAAAC/8yUT2/bPAzGv8oLvjsacdbcfGvXS7YBC7pjYAyqzSQqYkmlmGFBoO8+UMo/u07qFSuw",
-	"S2zHMvnwx4fcQWUbZw0a9lDswFcrbFS8nSliXWmnDMujI+uQWGN8qWv55a1DKMAzabOEEDIgfN5owhqK",
-	"uZwps8MZ+/iEFUPI4MHa5mVAd8qWEjA28eYD4QIK+D8/Cc33KvNzieGYShGprTyTtc10gND9uawt4pL2",
-	"T4SK8QGfN+h7yDTq16xTy8JSoxgK0IYnN3CMqw3jEuk1qVdVeGeNx5cyaE/5Gr7YiT4YF2u/xzW2s/Ye",
-	"+2y1efXQV+35uv7hRkiVdB3QU1lfW0MGHqsNad5+l3hJwB0qQrrd8Oo4F/LRY/z71MMVs4MgMbRZ2Fis",
-	"5rW8iV2yhsmu10j/3c6mkMFPJK+tgQLGo/Hoo2i2Do1yGgqYjMajSbQhr6KG/EhhidFqQkixtka80slw",
-	"YApSdcIaP70Zj+VSWcOYRlk5t9ZVjJM/eVFzGPwhnFt9i5XX6CvSjlNh374k16qlF+ptkVCGDJz1g6pJ",
-	"HofURfR8Z+vtXy2lPcqhbRimDYZ3ZtmZ4ss0DwaFYt625rwM5RXYIdubKN/J5Yeuwx/YSeY4rUXVICP5",
-	"mF6LLvEoZGBUnIp9bOjyy85YdBdb+c5sW0voDT49Q+fRy9RO7yO8Oi7BIfzSuhxE8Jjin2LY2fdvoXh6",
-	"uTvU2jkUyvA7AAD//5kb0tSHCAAA",
+	"H4sIAAAAAAAC/8xVTW/bMAz9KwO3oxdnzc23dr1kG7agOwbGoNpMoiKWVIoZFgT674Mk26mdj7rdAvQS",
+	"2zFNvvf4SO2g0JXRChVbyHZgixVWItzOBLEspBGK/aMhbZBYYngpS//LW4OQgWWSagnOJUD4uJGEJWRz",
+	"H5MnTYy+f8CCwSVwp3V1mNDsq8UCjFW4+UC4gAzep3ugaY0yfQrRtaUEkdj6Z9K6mg4AWsclXRCnsH8m",
+	"FIx3+LhBe0SZSvyZ9bgsNFWCIQOpeHIFbV6pGJdIz0E9i8IarSwewqBa5XPyhU4cE+Mk91tcY7fq0bAv",
+	"Wqpng75Jy+fxDzdCZNJ3wBFmp9v6XbNcSKQzuF0CFosNSd7+9IUj0hsUhHS94VU7QP6j+/D3vtkrZgPO",
+	"55BqoUN2yWv/JrRTKya9XiO9u55NIYHfSFZqBRmMR+PRJ49SG1TCSMhgMhqPJsGvvAoY0lauJQZPeikF",
+	"S628qXoVGvHByxPJhk+vxmN/KbRijDMvjFnLIuRJH6xH02yIIQ3pNDgwL9EWJA1HYj++RnuLpfXt6YKE",
+	"3CVgtB3EJg4DxHaj5Rtdbv8rle7Mu66zmDboLqxlb9xPq9kYFLJ515rz3OVnxHZJbaKPqh6EF7ipmZ1L",
+	"O+pgRl/hqpZouvOXX7J0L2DqN1s8KESFjGSDztIX9sMICSgRxr/ODX2jJE/o9ld9fmH5Omv536SzaP16",
+	"mt4G8cpwLAzRLx4ggxRsS7wpDXsn4GtU3L/cNVx7QS53fwMAAP//ZgU0o5kJAAA=",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

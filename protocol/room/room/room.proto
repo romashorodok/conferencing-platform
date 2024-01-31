@@ -68,6 +68,12 @@ service RoomController {
       get: "/rooms/{room_id}";
     };
   };
+
+  rpc RoomNotifier(RoomNotifierRequest) returns (RoomNotifierResponse) {
+    option(google.api.http) = {
+      get: "/rooms-notifier";
+    };
+  };
 }
 
 message RoomCreateRequest {
@@ -96,4 +102,10 @@ message RoomJoinRequest {
 }
 
 message RoomJoinResponse {
+}
+
+message RoomNotifierRequest {
+}
+
+message RoomNotifierResponse {
 }

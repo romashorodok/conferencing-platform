@@ -13,6 +13,7 @@ import { MediaStreamContext, setAudioMute, setVideoMute } from './rtc/MediaStrea
 import * as Popover from '@radix-ui/react-popover';
 import * as ScrollArea from '@radix-ui/react-scroll-area';
 import LoadingDots from './base/loading-dots'
+import AppLayout from './AppLayout'
 
 export class Mutex {
   wait: Promise<void>;
@@ -645,7 +646,7 @@ function App() {
   useEffect(() => console.log(count), [count])
 
   return (
-    <>
+    <AppLayout>
       <button onClick={startNormal}>Normal</button>
       <button onClick={startFaceDetection}>Face detection</button>
 
@@ -677,7 +678,7 @@ function App() {
         Click on the Vite and React logos to learn more
       </p>
 
-    </>
+    </AppLayout>
   )
 }
 

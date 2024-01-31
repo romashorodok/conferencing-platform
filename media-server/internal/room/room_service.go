@@ -270,9 +270,10 @@ func (p *PeerContext) SignalPeerConnection() {
 			break
 		}
 		success, err := signal()
-		if !errors.Is(err, ErrPeerConnectionClosed) && success {
+		if !errors.Is(err, ErrPeerConnectionClosed) || success {
 			break
 		}
+		log.Printf("Signaling for %s. Err %s", p.peerID, err)
 	}
 }
 
