@@ -1,6 +1,7 @@
 package room
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -108,15 +109,14 @@ func (ctrl *roomController) wsError(w *threadSafeWriter, err error) error {
 }
 
 type roomController struct {
+	lifecycle        fx.Lifecycle
 	roomService      *RoomService
 	stats            <-chan *rtpstats.RtpStats
 	upgrader         websocket.Upgrader
 	webrtc           *webrtc.API
 	logger           *slog.Logger
 	peerConnectionMu sync.Mutex
-
-	roomStateChanged      chan struct{}
-	notificationListeners map[string]*threadSafeWriter
+	roomNotifier     *RoomNotifier
 }
 
 func (ctrl *roomController) RoomControllerRoomNotifier(ctx echo.Context) error {
@@ -130,20 +130,13 @@ func (ctrl *roomController) RoomControllerRoomNotifier(ctx echo.Context) error {
 	defer w.Close()
 
 	id := uuid.NewString()
-	ctrl.notificationListeners[id] = w
-	defer delete(ctrl.notificationListeners, id)
+	ctrl.roomNotifier.Listen(id, w)
+	defer ctrl.roomNotifier.Stop(id)
 
 	for {
 		select {
 		case <-ctx.Request().Context().Done():
 			return ErrRoomCancelByUser
-		case <-ctrl.roomStateChanged:
-			for _, listener := range ctrl.notificationListeners {
-				listener.WriteJSON(&websocketMessage{
-					Event: "update-rooms",
-					Data:  "",
-				})
-			}
 		}
 	}
 }
@@ -176,7 +169,7 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 	defer peerContext.Close()
 	defer func() {
 		roomCtx.peerContextPool.Remove(peerContext)
-		ctrl.roomStateChanged <- struct{}{}
+		ctrl.roomNotifier.DispatchUpdateRooms()
 	}()
 	peerContext.stats = <-ctrl.stats
 	ctrl.peerConnectionMu.Unlock()
@@ -293,7 +286,7 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 				peerContext.Cancel(errors.New("Unable add into pool. On PeerConnectionStateConnected"))
 				return
 			}
-			ctrl.roomStateChanged <- struct{}{}
+			ctrl.roomNotifier.DispatchUpdateRooms()
 
 		case webrtc.PeerConnectionStateFailed:
 			peerContext.Close()
@@ -418,6 +411,13 @@ func (ctrl *roomController) RoomControllerRoomCreate(ctx echo.Context) error {
 // }
 
 func (ctrl *roomController) Resolve(c *echo.Echo) error {
+	go ctrl.roomNotifier.OnUpdateRooms(context.Background(), func(w *threadSafeWriter) {
+		w.WriteJSON(&websocketMessage{
+			Event: "update-rooms",
+			Data:  "",
+		})
+	})
+
 	spec, err := room.GetSwagger()
 	if err != nil {
 		return err
@@ -434,16 +434,18 @@ var (
 
 type newRoomController_Params struct {
 	fx.In
+	Lifecycle fx.Lifecycle
 
-	RoomService      *RoomService
-	API              *webrtc.API
-	Logger           *slog.Logger
-	Stats            chan *rtpstats.RtpStats
-	RoomStateChanged chan struct{} `name:"room_state_changed"`
+	RoomService  *RoomService
+	API          *webrtc.API
+	Logger       *slog.Logger
+	Stats        chan *rtpstats.RtpStats
+	RoomNotifier *RoomNotifier
 }
 
 func NewRoomController(params newRoomController_Params) *roomController {
 	return &roomController{
+		lifecycle:   params.Lifecycle,
 		webrtc:      params.API,
 		stats:       params.Stats,
 		logger:      params.Logger,
@@ -451,7 +453,6 @@ func NewRoomController(params newRoomController_Params) *roomController {
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
-		roomStateChanged:      params.RoomStateChanged,
-		notificationListeners: make(map[string]*threadSafeWriter),
+		roomNotifier: params.RoomNotifier,
 	}
 }

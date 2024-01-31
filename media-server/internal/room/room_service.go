@@ -406,6 +406,60 @@ func NewSubscriberPool() *PeerContextPool {
 	}
 }
 
+type RoomNotifier struct {
+	listeners     map[string]*threadSafeWriter
+	updateRoomCh  chan struct{}
+	updateRoomsMu sync.Mutex
+}
+
+func (n *RoomNotifier) Listen(id string, w *threadSafeWriter) {
+	n.updateRoomsMu.Lock()
+	defer n.updateRoomsMu.Unlock()
+	n.listeners[id] = w
+}
+
+func (n *RoomNotifier) Stop(id string) {
+	delete(n.listeners, id)
+}
+
+func (n *RoomNotifier) DispatchUpdateRooms() {
+	n.updateRoomsMu.Lock()
+	defer n.updateRoomsMu.Unlock()
+
+	if len(n.listeners) == 0 {
+		return
+	}
+
+	n.updateRoomCh <- struct{}{}
+}
+
+func (n *RoomNotifier) getListeners() (result []*threadSafeWriter) {
+	for _, listener := range n.listeners {
+		result = append(result, listener)
+	}
+	return
+}
+
+func (n *RoomNotifier) OnUpdateRooms(ctx context.Context, fn func(*threadSafeWriter)) {
+	var threshold uint64 = 1000000
+	var step uint64 = 2
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-n.updateRoomCh:
+			ParallelExec(n.getListeners(), threshold, step, fn)
+		}
+	}
+}
+
+func NewRoomNotifier() *RoomNotifier {
+	return &RoomNotifier{
+		listeners:    make(map[string]*threadSafeWriter),
+		updateRoomCh: make(chan struct{}),
+	}
+}
+
 type roomContext struct {
 	roomID          protocol.RoomID
 	peerContextPool *PeerContextPool
@@ -443,6 +497,7 @@ type RoomService struct {
 	webrtcAPI      *webrtc.API
 	logger         *slog.Logger
 	roomContextMap map[protocol.RoomID]*roomContext
+	roomNotifier   *RoomNotifier
 }
 
 func (s *RoomService) GetRoom(roomID string) *roomContext {
@@ -497,20 +552,24 @@ func (s *RoomService) CreateRoom(option *protocol.RoomCreateOption) (*roomContex
 		return nil, errors.New("not found room or it's nil")
 	}
 
+	s.roomNotifier.DispatchUpdateRooms()
+
 	return room, nil
 }
 
-type NewRoomService_Params struct {
+type NewRoomServiceParams struct {
 	fx.In
 
-	WebrtcAPI *webrtc.API
-	Logger    *slog.Logger
+	WebrtcAPI    *webrtc.API
+	Logger       *slog.Logger
+	RoomNotifier *RoomNotifier
 }
 
-func NewRoomService(params NewRoomService_Params) *RoomService {
+func NewRoomService(params NewRoomServiceParams) *RoomService {
 	return &RoomService{
 		webrtcAPI:      params.WebrtcAPI,
 		logger:         params.Logger,
 		roomContextMap: make(map[string]*roomContext),
+		roomNotifier:   params.RoomNotifier,
 	}
 }

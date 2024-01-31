@@ -59,7 +59,7 @@ function RoomContextProvider({ children }: PropsWithChildren<{}>) {
   }
 
   function deferUpdateRooms(): (...args: any) => void {
-    return debounce(updateRooms, 800);
+    return debounce(updateRooms, 200);
   }
 
   useEffect(() => {

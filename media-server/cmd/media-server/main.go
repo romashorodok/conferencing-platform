@@ -31,23 +31,11 @@ func CreateTestRoom(params CreateTestRoom_Params) {
 	_ = room
 }
 
-type roomStateChangedChanResult struct {
-	fx.Out
-
-	RoomStateChanged chan struct{} `name:"room_state_changed"`
-}
-
-func roomStateChangedChan() roomStateChangedChanResult {
-	return roomStateChangedChanResult{
-		RoomStateChanged: make(chan struct{}),
-	}
-}
-
 func main() {
 	fx.New(
 		fx.Provide(
-			roomStateChangedChan,
 			room.NewRoomService,
+			room.NewRoomNotifier,
 
 			globalprotocol.AsHttpController(ingress.NewWhipController),
 			globalprotocol.AsHttpController(room.NewRoomController),
