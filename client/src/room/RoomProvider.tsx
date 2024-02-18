@@ -1,6 +1,7 @@
 import { PropsWithChildren, createContext, useEffect, useState } from "react";
 import { debounce } from "../utils/debounce";
 import { EventEmitter } from 'events';
+import { MEDIA_SERVER, MEDIA_SERVER_WS } from "../variables";
 
 enum RoomsNotifierEvent {
   UPDATE_ROOMS = 'update-rooms',
@@ -31,7 +32,7 @@ class RoomsNotifier extends EventEmitter {
 
 type Participant = {}
 
-type Room = {
+export type Room = {
   participants: Array<Participant>,
   roomId: string,
 }
@@ -42,11 +43,16 @@ type RoomContextType = {
 
 export const RoomContext = createContext<RoomContextType>(undefined!)
 
-const MEDIA_SERVER = import.meta.env.VITE_MEDIA_SERVER
 const ROOMS_ENDPOINT = `${MEDIA_SERVER}/rooms`
 
-const MEDIA_SERVER_WS = import.meta.env.VITE_MEDIA_SERVER_WS
 const ROOM_NOTIFIER_ENDPOINT = `${MEDIA_SERVER_WS}/rooms-notifier`
+
+export async function createRoom(body: { roomId: string, maxParticipants: number }) {
+  return fetch(`${MEDIA_SERVER}/rooms`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
 
 function RoomContextProvider({ children }: PropsWithChildren<{}>) {
   const [rooms, setRooms] = useState<Array<Room>>([])

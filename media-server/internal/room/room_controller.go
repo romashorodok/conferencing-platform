@@ -141,6 +141,10 @@ func (ctrl *roomController) RoomControllerRoomNotifier(ctx echo.Context) error {
 	}
 }
 
+type SubscribeMessage struct {
+	RestartICE bool `json:"restartICE"`
+}
+
 func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId string) error {
 	roomCtx := ctrl.roomService.GetRoom(roomId)
 	if roomCtx == nil {
@@ -166,10 +170,10 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 		return ctrl.wsError(w, err)
 	}
 	defer peerContext.Cancel(errors.New("Implicit connection close"))
-	defer peerContext.Close()
 	defer func() {
 		roomCtx.peerContextPool.Remove(peerContext)
 		ctrl.roomNotifier.DispatchUpdateRooms()
+		peerContext.Close()
 	}()
 	peerContext.stats = <-ctrl.stats
 	ctrl.peerConnectionMu.Unlock()
@@ -189,16 +193,17 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 		if i == nil {
 			return
 		}
-		log.Println(i)
-		candidateString, err := json.Marshal(i.ToJSON())
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		w.WriteJSON(&websocketMessage{
-			Event: "candidate",
-			Data:  string(candidateString),
-		})
+
+		// log.Println(i)
+		// candidateString, err := json.Marshal(i.ToJSON())
+		// if err != nil {
+		// 	log.Println(err)
+		// 	return
+		// }
+		// w.WriteJSON(&websocketMessage{
+		// 	Event: "candidate",
+		// 	Data:  string(candidateString),
+		// })
 	})
 
 	peerContext.peerConnection.OnTrack(func(t *webrtc.TrackRemote, recv *webrtc.RTPReceiver) {
@@ -289,10 +294,10 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 			ctrl.roomNotifier.DispatchUpdateRooms()
 
 		case webrtc.PeerConnectionStateFailed:
-			peerContext.Close()
+			// peerContext.Close()
 			peerContext.Cancel(ErrOnStateClosed)
 		case webrtc.PeerConnectionStateClosed:
-			peerContext.Close()
+			// peerContext.Close()
 			peerContext.Cancel(ErrOnStateClosed)
 			roomCtx.peerContextPool.SignalPeerContexts()
 		}
@@ -320,6 +325,10 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 				return ctrl.wsError(w, err)
 			}
 
+			<-webrtc.GatheringCompletePromise(peerContext.peerConnection)
+			result, err := peerContext.peerConnection.SCTP().Transport().ICETransport().GetSelectedCandidatePair()
+			log.Println(result, err)
+
 		case "answer": /* Get answer from subscriber client side now peer already connected if they now ICE */
 
 			var answer SdpAnswer
@@ -336,11 +345,21 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 
 		case "subscribe": /* Send initial offer when someone start subscribing */
 
+			var subscribeMessage SubscribeMessage
+			var offerConfig webrtc.OfferOptions
+
+			json.Unmarshal([]byte(message.Data), &subscribeMessage)
+
+			if subscribeMessage.RestartICE {
+				offerConfig.ICERestart = true
+			}
+			log.Printf("%+v, %+v", offerConfig, subscribeMessage)
+
 			if _, err := peerContext.peerConnection.CreateDataChannel("_negotiation", nil); err != nil {
 				return ctrl.wsError(w, err)
 			}
 
-			offer, err := peerContext.peerConnection.CreateOffer(nil)
+			offer, err := peerContext.peerConnection.CreateOffer(&offerConfig)
 			if err != nil {
 				return ctrl.wsError(w, err)
 			}

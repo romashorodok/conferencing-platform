@@ -1,32 +1,37 @@
-import { PropsWithChildren, Dispatch, SetStateAction, createContext, useState, useEffect } from "react";
+import { PropsWithChildren, createContext, useState, useEffect, Dispatch, SetStateAction, useContext } from "react";
 import { RTCEngine } from "../App";
+import { RoomMediaStreamListContext } from "./RoomMediaStreamListProvider";
 
 type SubscriberContextType = {
-  subscriber: RTCEngine,
-  setSubscriber: Dispatch<SetStateAction<RTCEngine>>
-};
+  peerContext: RTCEngine | null,
+  setPeerContext: Dispatch<SetStateAction<RTCEngine | null>>
+}
 
-export const SubscriberContext = createContext<SubscriberContextType>(undefined as never)
+export const SubscriberContext = createContext<SubscriberContextType>(undefined!)
 
 function SubscriberContextProvider({ children }: PropsWithChildren<{}>) {
-  const [subscriber, setSubscriber] = useState<RTCEngine>(new RTCEngine({
-    iceServers: [
-      {
-        urls: 'stun:stun.l.google.com:19302'
-      },
-    ]
-  }))
+  const [peerContext, setPeerContext] = useState<RTCEngine | null>(null)
+  const { setRoomMediaStream } = useContext(RoomMediaStreamListContext)
+
+  // const [peerContext, setPeerContext] = useState<RTCEngine | null>(new RTCEngine({
+  //   iceServers: [
+  //     // {
+  //     // urls: 'stun:stun.l.google.com:19302'
+  //     // },
+  //   ]
+  // }))
 
   useEffect(() => {
     return () => {
-      if (subscriber) {
-        subscriber.close()
+      if (peerContext) {
+        setRoomMediaStream({ action: 'clear', payload: undefined! })
+        peerContext.close()
       }
     }
-  }, [subscriber])
+  }, [peerContext])
 
   return (
-    <SubscriberContext.Provider value={{ subscriber, setSubscriber }}>
+    <SubscriberContext.Provider value={{ peerContext, setPeerContext }}>
       {children}
     </SubscriberContext.Provider>
   )

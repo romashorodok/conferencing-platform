@@ -297,6 +297,10 @@ func (p *PeerContext) NewPeerConnection() error {
 }
 
 func (p *PeerContext) Close() error {
+	for _, sender := range p.peerConnection.GetSenders() {
+		p.peerConnection.RemoveTrack(sender)
+	}
+
 	return p.peerConnection.Close()
 }
 

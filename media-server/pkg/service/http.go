@@ -20,7 +20,7 @@ type httpServer_Params struct {
 
 func httpErrorHandler(e *echo.Echo, logger *slog.Logger) func(err error, c echo.Context) {
 	return func(err error, c echo.Context) {
-		logger.Error(err.Error(), slog.String("request", fmt.Sprintf("%+v", c.Request())))
+		// logger.Error(err.Error(), slog.String("request", fmt.Sprintf("%+v", c.Request())))
 		e.DefaultHTTPErrorHandler(err, c)
 	}
 }

@@ -15,7 +15,7 @@ var loggerWriter = os.Stdout
 
 func logger() *slog.Logger {
 	return slog.New(slog.NewJSONHandler(loggerWriter, &slog.HandlerOptions{
-		AddSource: true,
+		AddSource: false,
 		Level:     slog.LevelDebug,
 	}))
 }
