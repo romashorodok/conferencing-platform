@@ -9,3 +9,10 @@
 html, body, #root {
     min-height: 100vh;
 }
+
+.clipped-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+}

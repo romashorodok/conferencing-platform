@@ -602,7 +602,7 @@ function App() {
   useEffect(() => console.log(count), [count])
 
   return (
-    <AppLayout>
+    <>
       <button onClick={startNormal}>Normal</button>
       <button onClick={startFaceDetection}>Face detection</button>
 
@@ -633,8 +633,7 @@ function App() {
       <p className="read-the-docs">
         Click on the Vite and React logos to learn more
       </p>
-
-    </AppLayout>
+    </>
   )
 }
 

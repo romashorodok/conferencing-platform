@@ -41,7 +41,7 @@ type RoomContextType = {
   rooms: Array<Room>
 };
 
-export const RoomContext = createContext<RoomContextType>(undefined!)
+export const RoomNotifierContext = createContext<RoomContextType>(undefined!)
 
 const ROOMS_ENDPOINT = `${MEDIA_SERVER}/rooms`
 
@@ -54,7 +54,7 @@ export async function createRoom(body: { roomId: string, maxParticipants: number
   })
 }
 
-function RoomContextProvider({ children }: PropsWithChildren<{}>) {
+function RoomNotifierContextProvider({ children }: PropsWithChildren<{}>) {
   const [rooms, setRooms] = useState<Array<Room>>([])
   const [notifier,] = useState<RoomsNotifier>(new RoomsNotifier(ROOM_NOTIFIER_ENDPOINT))
 
@@ -89,10 +89,10 @@ function RoomContextProvider({ children }: PropsWithChildren<{}>) {
   }, [notifier])
 
   return (
-    <RoomContext.Provider value={{ rooms }}>
+    <RoomNotifierContext.Provider value={{ rooms }}>
       {children}
-    </RoomContext.Provider>
+    </RoomNotifierContext.Provider>
   )
 }
 
-export default RoomContextProvider;
+export default RoomNotifierContextProvider;

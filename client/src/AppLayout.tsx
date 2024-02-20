@@ -1,10 +1,8 @@
 import { FormEvent, useContext, useState } from "react"
-import { Room, RoomContext, createRoom } from "./room/RoomProvider"
+import { Room, RoomNotifierContext, createRoom } from "./room/RoomProvider"
 import * as Dialog from '@radix-ui/react-dialog'
 import { PlusIcon } from "@radix-ui/react-icons";
-import { SignalContext } from "./rtc/SignalProvider";
-import { SubscriberContext } from "./rtc/SubscriberProvider";
-import { useRoom } from "./App";
+import { NavLink } from "react-router-dom";
 
 function CloseIcon() {
   return (
@@ -68,26 +66,23 @@ function RoomDialog() {
 }
 
 function RoomNavItem({ room }: { room: Room }) {
-  // const { setSignalServer } = useContext(SignalContext)
-  // const { disconnect } = useContext(SubscriberContext)
-  const { join } = useRoom()
-
-  function changeRoom(roomID: string) {
-    join(roomID)
-    // disconnect()
-    // setSignalServer(room.roomId)
-  }
-
   return (
-    <div className={`p-2`}
-      onClick={() => changeRoom(room.roomId)}>
-      {JSON.stringify(room)}
+    <div className={`p-2`}>
+      <NavLink to={`/r/${room.roomId}`}>
+        <button className={`Button max-w-[100px] px-2 w-full h-[30px] violet clipped-text block`}>
+          {room.roomId}
+        </button>
+      </NavLink>
+      <div>
+        {JSON.stringify(room.participants)}
+      </div>
     </div>
   )
 }
 
 function RoomNav() {
-  const { rooms } = useContext(RoomContext)
+  const { rooms } = useContext(RoomNotifierContext)
+
   return (
     <nav className={`w-[140px] overflow-hidden`}>
       <div className={`flex justify-around mb-4`}>
@@ -106,7 +101,13 @@ function RoomNav() {
 export default function({ children }: React.PropsWithChildren<{}>) {
   return (
     <div className={`flex flex-col min-h-screen max-h-screen`}>
-      <header>Some link or login</header>
+      <header>
+        <NavLink to="/">
+          <button>
+            Home
+          </button>
+        </NavLink>
+      </header>
       <section className={`flex-[1] flex overflow-hidden`}>
         <RoomNav />
         <main className={`flex flex-col flex-[1] min-h-inherit overflow-scroll`}>
