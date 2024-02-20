@@ -222,7 +222,6 @@ export function useRoom() {
       replaceTrack(videoSenders, mediaStream.getVideoTracks())
       replaceTrack(audioSenders, mediaStream.getAudioTracks())
     }
-
   }, [mediaStream, peerContext])
 
   useEffect(() => {
@@ -253,7 +252,7 @@ export function useRoom() {
   // |> setremotedescription: server
   //
   // After that, peers must send their ice candidates
-  const join = useCallback(async (roomID: string) => {
+  const join = useCallback(async ({ roomID }: { roomID: string }) => {
     if (isSameRoom(roomID))
       return
 
@@ -303,13 +302,14 @@ export function useRoom() {
       signal.subscribe()
       setSignal(signal)
       setPeerContext(peerContext)
-    } catch { }
+    } catch {
+    }
   }, [])
 
-  return { join, roomMediaStreamList }
+  return { join, roomMediaStreamList, sinkMediaStream }
 }
 
-function CameraComponent() {
+export function CameraComponent() {
   const {
     mediaStream,
     mediaStreamReady,
@@ -524,7 +524,7 @@ function RoomStatContainer({
 
 const FRAMES_DECODED_STOP_LOADING = 1
 
-function RoomStream({
+export function RoomStream({
   mediaStream,
 }: { mediaStream: MediaStream }) {
   const { peerContext: subscriber } = useContext(SubscriberContext)
