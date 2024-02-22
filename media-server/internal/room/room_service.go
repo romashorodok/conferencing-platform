@@ -227,49 +227,64 @@ type PeerContext struct {
 	Subscriber     *Subscriber
 }
 
-func (p *PeerContext) signalPeerConnection() (bool, error) {
-	if p.peerConnection.ConnectionState() == webrtc.PeerConnectionStateClosed {
-		return false, ErrPeerConnectionClosed
-	}
-
-	offer, err := p.peerConnection.CreateOffer(nil)
-	if err != nil {
-		return false, err
-	}
-
-	if err = p.peerConnection.SetLocalDescription(offer); err != nil {
-		return false, err
-	}
-
-	offerString, err := json.Marshal(offer)
-	if err != nil {
-		return false, err
-	}
-
-	if err = p.ws.WriteJSON(&websocketMessage{
+func (p *PeerContext) signalPeerConnection(offer string) (bool, error) {
+	if err := p.ws.WriteJSON(&websocketMessage{
 		Event: "offer",
-		Data:  string(offerString),
+		Data:  offer,
 	}); err != nil {
 		return false, err
 	}
 	return true, nil
 }
 
+// Return the offer
+func (p *PeerContext) setLocalDescription() (string, error) {
+	if p.peerConnection.ConnectionState() == webrtc.PeerConnectionStateClosed {
+		return "", ErrPeerConnectionClosed
+	}
+
+	offer, err := p.peerConnection.CreateOffer(nil)
+	if err != nil {
+		return "", err
+	}
+
+	if err = p.peerConnection.SetLocalDescription(offer); err != nil {
+		return "", err
+	}
+
+	offerBytes, err := json.Marshal(offer)
+	if err != nil {
+		return "", err
+	}
+
+	return string(offerBytes), nil
+}
+
 func (p *PeerContext) SignalPeerConnection() {
 	p.signalMu.Lock()
 	defer p.signalMu.Unlock()
 
-	signal := debounce(p.signalPeerConnection, time.Millisecond*10)
+	signal := debounceSignal(p.signalPeerConnection, time.Millisecond*10)
+	sleep := func() {
+		time.Sleep(time.Millisecond * 60)
+	}
 
 	for syncAttempt := 0; ; syncAttempt++ {
+		offer, err := p.setLocalDescription()
+		if errors.Is(err, webrtc.ErrConnectionClosed) {
+            log.Println("connection closed")
+			return
+		}
+
 		if syncAttempt >= 25 {
 			go func() {
-				time.Sleep(time.Millisecond * 60)
-				signal()
+				sleep()
+				p.SignalPeerConnection()
+				// signal(offer)
 			}()
 			break
 		}
-		success, err := signal()
+		success, err := signal(offer)
 		if !errors.Is(err, ErrPeerConnectionClosed) || success {
 			break
 		}
@@ -321,13 +336,13 @@ func NewPeerContext(params NewPeerContextParams) *PeerContext {
 	}
 }
 
-func debounce(fn func() (bool, error), delay time.Duration) func() (bool, error) {
+func debounceSignal(fn func(string) (bool, error), delay time.Duration) func(string) (bool, error) {
 	var (
 		mu    sync.Mutex
 		last  time.Time
 		timer *time.Timer
 	)
-	return func() (result bool, err error) {
+	return func(offer string) (result bool, err error) {
 		mu.Lock()
 		defer mu.Unlock()
 
@@ -337,7 +352,7 @@ func debounce(fn func() (bool, error), delay time.Duration) func() (bool, error)
 
 		elapsed := time.Since(last)
 		if elapsed > delay {
-			result, err = fn()
+			result, err = fn(offer)
 			last = time.Now()
 			return
 		}
@@ -345,7 +360,7 @@ func debounce(fn func() (bool, error), delay time.Duration) func() (bool, error)
 		timer = time.AfterFunc(delay-elapsed, func() {
 			mu.Lock()
 			defer mu.Unlock()
-			result, err = fn()
+			result, err = fn(offer)
 			last = time.Now()
 		})
 

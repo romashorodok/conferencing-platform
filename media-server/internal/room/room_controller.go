@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"runtime"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -213,6 +214,14 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 			}
 		}()
 
+		// go func() {
+		// 	for {
+		// 		time.Sleep(time.Second * 5)
+		//               stat := peerContext.stats.GetGetter().Get(uint32(t.SSRC()))
+		//               log.Printf("%+v", stat)
+		// 	}
+		// }()
+
 		var threshold uint64 = 1000000
 		var step uint64 = 2
 		log.Println("On track", t.ID())
@@ -294,14 +303,28 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 			ctrl.roomNotifier.DispatchUpdateRooms()
 
 		case webrtc.PeerConnectionStateFailed:
-			// peerContext.Close()
+			peerContext.Close()
 			peerContext.Cancel(ErrOnStateClosed)
 		case webrtc.PeerConnectionStateClosed:
-			// peerContext.Close()
+			peerContext.Close()
 			peerContext.Cancel(ErrOnStateClosed)
 			roomCtx.peerContextPool.SignalPeerContexts()
 		}
 	})
+
+	// TODO: make on each peer track context done and wait when track is done make signal with removing the track from each peer side
+	// NOTE: this fix the bug when track is removed and on client side it's on remote description
+	go func() {
+		ticker := time.NewTicker(time.Second * 10)
+		for {
+			select {
+			case <-peerContext.Ctx.Done():
+				return
+			case <-ticker.C:
+				peerContext.SignalPeerConnection()
+			}
+		}
+	}()
 
 	message := &websocketMessage{}
 	for {
