@@ -5,3 +5,14 @@
 .filter-white {
     filter: invert(100%) sepia(0%) saturate(7495%) hue-rotate(244deg) brightness(98%) contrast(105%)
 }
+
+html, body, #root {
+    min-height: 100vh;
+}
+
+.clipped-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+}

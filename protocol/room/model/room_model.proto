@@ -2,16 +2,21 @@ syntax = "proto3";
 
 package room.model;
 
+import "google/api/field_behavior.proto";
+
 option go_package = "github.com/romashorodok/conferencing-platform/pkg/gen/model;modelpb";
 
 message Room {
-  string sessionID = 1;
-  string host = 2;
-  string port = 3;
-  repeated Participant participants = 4;
+  string room_id = 1 [
+    (google.api.field_behavior) = REQUIRED
+  ];
+  repeated Participant participants = 2 [
+    (google.api.field_behavior) = REQUIRED
+  ];
 }
 
 message Participant {
-  string id = 1;
-  string name = 2;
+  string id = 1 [
+    (google.api.field_behavior) = REQUIRED
+  ];
 }

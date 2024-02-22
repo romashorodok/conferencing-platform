@@ -1,4 +1,4 @@
-import { Dispatch, PropsWithChildren, Reducer, useCallback, useContext, useEffect, useReducer, useRef, useState } from 'react'
+import { PropsWithChildren, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
 import cameraSvg from './assets/camera.svg'
@@ -13,6 +13,9 @@ import { MediaStreamContext, setAudioMute, setVideoMute } from './rtc/MediaStrea
 import * as Popover from '@radix-ui/react-popover';
 import * as ScrollArea from '@radix-ui/react-scroll-area';
 import LoadingDots from './base/loading-dots'
+import AppLayout from './AppLayout'
+import { MEDIA_SERVER_WS } from './variables'
+import { RoomMediaStreamListContext } from './rtc/RoomMediaStreamListProvider'
 
 export class Mutex {
   wait: Promise<void>;
@@ -87,6 +90,10 @@ export class RTCEngine extends EventEmitter {
   }
 
   close() {
+    if (this.peerConnection?.signalingState !== 'closed') {
+      this.peerConnection?.getSenders().forEach(s => this.peerConnection?.removeTrack(s))
+    }
+
     this.peerConnection?.close()
   }
 
@@ -124,7 +131,24 @@ export class RTCEngine extends EventEmitter {
   }
 }
 
-enum SignalEvent {
+const attachTracks = (peerContext: RTCEngine, tracks: MediaStreamTrack[], mediaStream: MediaStream) => {
+  tracks.forEach(t => {
+    peerContext.peerConnection?.addTrack(t, mediaStream)
+  })
+}
+
+const replaceTrack = (senders: RTCRtpSender[] | undefined, tracks: MediaStreamTrack[]) => {
+  if (!senders) {
+    throw Error("empty senders")
+  }
+  senders.forEach(s => {
+    tracks.forEach(t => {
+      s.replaceTrack(t)
+    })
+  })
+}
+
+export enum SignalEvent {
   Offer = "offer",
   Answer = "answer",
   // https://datatracker.ietf.org/doc/html/draft-ietf-mmusic-trickle-ice
@@ -139,7 +163,7 @@ export class Signal extends EventEmitter {
   private onConnectUnlock: Promise<() => void>
   // private lock = new Mutex()
 
-  constructor(private readonly uri: string = "ws://localhost:8080/ws-rtc-signal") {
+  constructor(public readonly uri: string = "ws://localhost:8080/ws-rtc-signal") {
     super()
     this.onConnectUnlock = this.onConnect.lock()
   }
@@ -179,56 +203,42 @@ export class Signal extends EventEmitter {
   }
 }
 
-function useSubscriber({
-  setMediaStream
-}: {
-  setMediaStream: Dispatch<OriginTrackEvent>
-}) {
-  const { subscriber } = useContext(SubscriberContext)
-  const { signal } = useContext(SignalContext)
+export function useRoom() {
+  const { mediaStream } = useContext(MediaStreamContext)
+  const { peerContext, setPeerContext } = useContext(SubscriberContext)
+  const { signal, setSignal } = useContext(SignalContext)
+  const { roomMediaStreamList, setRoomMediaStream } = useContext(RoomMediaStreamListContext)
 
-  useEffect(() => {
-    if (!signal || !subscriber) return
-    signal.on(SignalEvent.TrickleIceCandidate, subscriber.onTrickleIceCandidate)
-    subscriber.on(PeerConnectionEvent.OnICECandidate, function(e) {
-      if (!e.candidate) {
-        return
-      }
-
-      console.log("send ice candidate", e.candidate)
-      signal.ws?.send(JSON.stringify({
-        event: SignalEvent.TrickleIceCandidate,
-        data: JSON.stringify(e.candidate)
-      }))
-    })
-    return () => {
-      signal.removeAllListeners(SignalEvent.TrickleIceCandidate)
-      subscriber.removeAllListeners(PeerConnectionEvent.OnICECandidate)
-    }
-  }, [subscriber, signal])
-
-  useEffect(() => {
-    if (!subscriber || !signal)
+  const sinkMediaStream = useCallback(() => {
+    if (!mediaStream || !peerContext)
       return
 
-    const onOffer = async function(sd: string) {
-      if (!subscriber)
-        return
-      await subscriber.setRemoteDescription(JSON.parse(sd))
-      let answer = await subscriber.createAnswer()
-      if (!answer || !answer.sdp) {
-        throw new Error("undefined subscriber an answer, when the negotiate")
-      }
-      answer.sdp = answer.sdp.replace("useinbandfec=1", "useinbandfec=1;stereo=1")
-      subscriber.setLocalDescription(answer)
-      signal.answer(answer)
+    const senders = peerContext.peerConnection?.getSenders()
+    if (senders?.length === 0) {
+      attachTracks(peerContext, mediaStream.getTracks(), mediaStream)
+    } else {
+      const videoSenders = peerContext?.peerConnection?.getSenders().filter(t => t.track?.kind === 'video')
+      const audioSenders = peerContext?.peerConnection?.getSenders().filter(t => t.track?.kind === 'audio')
+      replaceTrack(videoSenders, mediaStream.getVideoTracks())
+      replaceTrack(audioSenders, mediaStream.getAudioTracks())
     }
+  }, [mediaStream, peerContext])
 
-    signal.on(SignalEvent.Offer, onOffer)
+  useEffect(() => {
+    sinkMediaStream()
+
     return () => {
-      signal.removeListener(SignalEvent.Offer, onOffer)
+      // TODO: need remove tracks by hand
     }
-  }, [signal, subscriber])
+  }, [sinkMediaStream])
+
+  const isSameRoom = useCallback((roomID: string) => {
+    const uri = `${MEDIA_SERVER_WS}/rooms/${roomID}`
+    if (signal?.uri && signal.uri === uri) {
+      return true
+    }
+    return false
+  }, [signal])
 
   // process when two peers exchange session descriptions about their capabilities and establish a connection
   //
@@ -242,108 +252,64 @@ function useSubscriber({
   // |> setremotedescription: server
   //
   // After that, peers must send their ice candidates
-  const subscribe = useCallback(async () => {
-    await signal.onConnect.wait
-    signal.subscribe()
-  }, [signal])
+  const join = useCallback(async ({ roomID }: { roomID: string }) => {
+    if (isSameRoom(roomID))
+      return
 
-  useEffect(() => {
-    subscriber.peerConnection!.ontrack = (evt) => {
-      // if (evt.track.kind === 'audio') {
-      //   return
-      // }
+    const signalRoomUrl = `${MEDIA_SERVER_WS}/rooms/${roomID}`
+    const signal = new Signal(signalRoomUrl)
+    const peerContext = new RTCEngine()
 
-      // @ts-ignore
-      const el: HTMLVideoElement = document.createElement(evt.track.kind)
-      const [stream] = evt.streams
-      setMediaStream({ [stream.id]: evt })
-      // setMediaStream({ [stream.id]: stream })
-      stream.onremovetrack = () => setMediaStream({ [stream.id]: undefined })
-    }
-  }, [])
-
-  return {
-    subscribe
-  }
-}
-
-function usePublisher() {
-  const { subscriber } = useContext(SubscriberContext)
-  const { mediaStream } = useContext(MediaStreamContext)
-
-  const publish = useCallback(async () => {
     try {
-      const stream = mediaStream
-      stream.getTracks().forEach(t => {
-        subscriber.peerConnection?.addTrack(t, stream)
+      signal.connect()
+      await signal.onConnect.wait
+
+      signal.on(SignalEvent.Offer, async (sd: string) => {
+        await peerContext.setRemoteDescription(JSON.parse(sd))
+        let answer = await peerContext.createAnswer()
+        if (!answer || !answer.sdp) {
+          throw new Error("undefined subscriber an answer, when the negotiate")
+        }
+        answer.sdp = answer.sdp.replace("useinbandfec=1", "useinbandfec=1;stereo=1")
+        peerContext.setLocalDescription(answer)
+        signal.answer(answer)
       })
-    } catch { }
-  }, [subscriber, mediaStream])
 
-  useEffect(() => {
-    const videoSenders = subscriber.peerConnection?.getSenders().filter(t => t.track?.kind === 'video')
-    const audioSenders = subscriber.peerConnection?.getSenders().filter(t => t.track?.kind === 'audio')
-
-    videoSenders?.forEach(s => {
-      mediaStream.getVideoTracks().forEach(t => {
-        s.replaceTrack(t)
-      })
-    })
-
-    audioSenders?.forEach(s => {
-      mediaStream.getAudioTracks().forEach(t => {
-        s.replaceTrack(t)
-      })
-    })
-
-    return () => {
-      subscriber?.peerConnection?.getSenders().forEach(s => {
-        s.replaceTrack(null)
-        // subscriber.peerConnection?.removeTrack(s)
-      })
-    }
-  }, [mediaStream, subscriber])
-
-  return { publish }
-}
-
-function useRoom() {
-  const [mediaStreamList, setMediaStream] = useReducer<Reducer<MediaStreamContextReducer, OriginTrackEvent>>(
-    (state, event) => {
-      Object.entries(event).forEach(([streamID, trackEvent]) => {
-        if (!trackEvent) {
-          delete state[streamID]
+      peerContext.on(PeerConnectionEvent.OnICECandidate, (e: RTCIceCandidate) => {
+        if (!e.candidate) {
           return
         }
 
-        let context: StreamContext
-        if (state[streamID]) {
-          context = state[streamID]
-        } else {
-          context = { stream: new MediaStream(), originList: [] }
-        }
-
-        context.originList.push(trackEvent)
-        context.stream.addTrack(trackEvent.track)
-
-        Object.assign(state, { [streamID]: context })
+        console.log("[Room Signal] send ice candidate", e.candidate)
+        signal.ws?.send(JSON.stringify({
+          event: SignalEvent.TrickleIceCandidate,
+          data: JSON.stringify(e.candidate)
+        }))
       })
 
-      return { ...state }
-    },
-    {}
-  )
-  const { subscribe } = useSubscriber({ setMediaStream })
-  const { publish } = usePublisher()
+      peerContext.peerConnection!.ontrack = (evt) => {
+        console.log("on track", evt)
 
-  const join = useCallback(() => publish().then(_ => subscribe()), [publish, subscribe])
+        const [stream] = evt.streams
+        setRoomMediaStream({ action: 'mutate', payload: { [stream.id]: evt } })
 
-  useEffect(() => console.log(mediaStreamList), [mediaStreamList])
+        stream.onremovetrack = () => {
+          console.log("remove track")
+          setRoomMediaStream({ action: 'mutate', payload: { [stream.id]: undefined } })
+        }
+      }
 
-  return { join, mediaStreamList }
+      signal.subscribe()
+      setSignal(signal)
+      setPeerContext(peerContext)
+    } catch {
+    }
+  }, [])
+
+  return { join, roomMediaStreamList, sinkMediaStream }
 }
 
-function CameraComponent() {
+export function CameraComponent() {
   const {
     mediaStream,
     mediaStreamReady,
@@ -558,10 +524,10 @@ function RoomStatContainer({
 
 const FRAMES_DECODED_STOP_LOADING = 1
 
-function RoomStream({
+export function RoomStream({
   mediaStream,
 }: { mediaStream: MediaStream }) {
-  const { subscriber } = useContext(SubscriberContext)
+  const { peerContext: subscriber } = useContext(SubscriberContext)
   const [statList, setStatList] = useState(new Map<string, StatObject>())
   const [showStats, setShowStats] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
@@ -570,7 +536,7 @@ function RoomStream({
     const tracks = mediaStream.getTracks()
     const stats: StatObject[] = []
     await Promise.all(tracks.map(async track => {
-      const report = await subscriber.peerConnection?.getStats(track);
+      const report = await subscriber!.peerConnection?.getStats(track);
       if (report) {
         for (const [_, stat] of Array.from(report)) {
           switch (stat.type) {
@@ -613,32 +579,23 @@ function RoomStream({
 }
 
 function Room() {
-  const { join, mediaStreamList } = useRoom()
+  const { roomMediaStreamList } = useRoom()
 
+  // <button onClick={join}>Join</button>
   return (
     <div>
-      <button onClick={join}>Join</button>
-      {Object.entries(mediaStreamList).map(([id, { stream }]) => (
+      {Object.entries(roomMediaStreamList).map(([id, { stream }]) => (
         <RoomStream key={id} mediaStream={stream} />
       ))}
     </div>
   )
 }
 
-type StreamContext = {
-  stream: MediaStream,
-  originList: Array<RTCTrackEvent>
-}
-
-type MediaStreamContextReducer = { [streamID: string]: StreamContext }
-
-type DeleteStreamEvent = undefined
-type OriginTrackEvent = { [streamID: string]: RTCTrackEvent | DeleteStreamEvent }
 
 function App() {
   const { startFaceDetection, startNormal } = useContext(MediaStreamContext)
-
   // const { join } = useRoom()
+  // const room = useRoom()
 
   const [count, setCount] = useState(0)
 
@@ -676,7 +633,6 @@ function App() {
       <p className="read-the-docs">
         Click on the Vite and React logos to learn more
       </p>
-
     </>
   )
 }

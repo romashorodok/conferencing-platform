@@ -1,12 +1,14 @@
 import { PropsWithChildren, createContext, useEffect, useState } from "react";
 import { isChromiumBased } from "../helpers";
+import { Mutex } from "../App";
 
 type MediaStreamContextType = {
-  mediaStream: MediaStream | undefined
+  mediaStream: MediaStream
   mediaStreamReady: boolean
+  onPageMountMediaStreamMutex: Mutex | null
 
-  startFaceDetection: () => void
-  startNormal: () => void
+  startFaceDetection: Promise<() => void>
+  startNormal: Promise<() => void>
 };
 
 export const MediaStreamContext = createContext<MediaStreamContextType>(undefined!)
@@ -131,22 +133,28 @@ function MediaStreamProvider({ children }: PropsWithChildren<{}>) {
   const [mediaStream, setMediaStream] = useState<MediaStream>()
   const [mediaStreamReady, setMediaStreamReady] = useState(false)
   const [worker, setWorker] = useState<Worker>()
+  const [onPageMountMediaStreamMutex, setOnPageMountMediaStreamMutex] = useState<Mutex | null>(null)
 
-  function startNormal() {
+  async function startNormal(unlock?: Promise<() => void>) {
+    // const unlock = await mediaStreamMutex.lock()
     defaultMediaStream
-      .then(stream => {
-        setMediaStream(stream)
-        setMediaStreamReady(true)
+      .then(async stream => {
+        setMediaStream(stream);
+        setMediaStreamReady(true);
+        if (unlock)
+          (await unlock)()
       })
   }
 
-  function startFaceDetection() {
+  async function startFaceDetection(unlock?: Promise<() => void>) {
     if (isChromiumBased()) {
       startFaceDetectionStream()
-        .then(({ stream, worker }) => {
-          setMediaStream(stream)
-          setMediaStreamReady(true)
-          setWorker(worker)
+        .then(async ({ stream, worker }) => {
+          setMediaStream(stream);
+          setMediaStreamReady(true);
+          setWorker(worker);
+          if (unlock)
+            (await unlock)()
         })
     } else {
       console.warn("Face detection work only in chromium based browsers")
@@ -155,7 +163,10 @@ function MediaStreamProvider({ children }: PropsWithChildren<{}>) {
   }
 
   useEffect(() => {
-    startNormal()
+    const mu = new Mutex()
+    const unlock = mu.lock()
+    startNormal(unlock)
+    setOnPageMountMediaStreamMutex(mu)
   }, [])
 
   useEffect(() => {
@@ -169,7 +180,8 @@ function MediaStreamProvider({ children }: PropsWithChildren<{}>) {
   }, [mediaStream])
 
   return (
-    <MediaStreamContext.Provider value={{ mediaStream, mediaStreamReady, startNormal, startFaceDetection }}>
+    // @ts-ignore
+    <MediaStreamContext.Provider value={{ mediaStream, mediaStreamReady, startNormal, startFaceDetection, onPageMountMediaStreamMutex }}>
       {children}
     </MediaStreamContext.Provider>
   )
