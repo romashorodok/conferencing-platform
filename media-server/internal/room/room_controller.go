@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"runtime"
 	"sync"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -162,15 +161,15 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 	defer w.Close()
 
 	peerContext := NewPeerContext(NewPeerContextParams{
-		Parent: ctx.Request().Context(),
-		API:    ctrl.webrtc,
-		WS:     w,
+		Context: ctx.Request().Context(),
+		API:     ctrl.webrtc,
+		WS:      w,
 	})
 	ctrl.peerConnectionMu.Lock()
 	if err := peerContext.NewPeerConnection(); err != nil {
 		return ctrl.wsError(w, err)
 	}
-	defer peerContext.Cancel(errors.New("Implicit connection close"))
+	defer peerContext.cancel(errors.New("Implicit connection close"))
 	defer func() {
 		roomCtx.peerContextPool.Remove(peerContext)
 		ctrl.roomNotifier.DispatchUpdateRooms()
@@ -178,7 +177,6 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 	}()
 	peerContext.stats = <-ctrl.stats
 	ctrl.peerConnectionMu.Unlock()
-	peerContext.NewSubscriber()
 
 	// Declare publisher transceiver for all kinds
 	for _, typ := range []webrtc.RTPCodecType{webrtc.RTPCodecTypeVideo, webrtc.RTPCodecTypeAudio} {
@@ -188,24 +186,6 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 			return ctrl.wsError(w, err)
 		}
 	}
-
-	// Need send ice candidate to the client for success gathering
-	peerContext.peerConnection.OnICECandidate(func(i *webrtc.ICECandidate) {
-		if i == nil {
-			return
-		}
-
-		// log.Println(i)
-		// candidateString, err := json.Marshal(i.ToJSON())
-		// if err != nil {
-		// 	log.Println(err)
-		// 	return
-		// }
-		// w.WriteJSON(&websocketMessage{
-		// 	Event: "candidate",
-		// 	Data:  string(candidateString),
-		// })
-	})
 
 	peerContext.peerConnection.OnTrack(func(t *webrtc.TrackRemote, recv *webrtc.RTPReceiver) {
 		defer func() {
@@ -234,7 +214,7 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 
 		for {
 			select {
-			case <-peerContext.Ctx.Done():
+			case <-peerContext.ctx.Done():
 				return
 			default:
 			}
@@ -251,7 +231,7 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 
 			ParallelExec(peerContexts, threshold, step, func(peer *PeerContext) {
 				select {
-				case <-peer.Ctx.Done():
+				case <-peer.ctx.Done():
 					return
 				default:
 				}
@@ -267,6 +247,7 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 						log.Println("Create loopback track")
 						track, err = peer.Subscriber.LoopbackTrack(t, recv)
 						track.OnFeedback(onTrackFeedback)
+						track.OnCloseAsync(peer.SignalPeerConnection)
 					}
 
 				default:
@@ -275,6 +256,7 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 						log.Println("Create local track track")
 						track, err = peer.Subscriber.CreateTrack(t, recv)
 						track.OnFeedback(onTrackFeedback)
+						track.OnCloseAsync(peer.SignalPeerConnection)
 					}
 				}
 
@@ -297,34 +279,31 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 		case webrtc.PeerConnectionStateConnected:
 			if err = roomCtx.peerContextPool.Add(peerContext); err != nil {
 				ctrl.wsError(w, err)
-				peerContext.Cancel(errors.New("Unable add into pool. On PeerConnectionStateConnected"))
+				peerContext.cancel(errors.New("Unable add into pool. On PeerConnectionStateConnected"))
 				return
 			}
 			ctrl.roomNotifier.DispatchUpdateRooms()
 
-		case webrtc.PeerConnectionStateFailed:
+		case webrtc.PeerConnectionStateClosed, webrtc.PeerConnectionStateFailed:
 			peerContext.Close()
-			peerContext.Cancel(ErrOnStateClosed)
-		case webrtc.PeerConnectionStateClosed:
-			peerContext.Close()
-			peerContext.Cancel(ErrOnStateClosed)
+			peerContext.cancel(ErrOnStateClosed)
 			roomCtx.peerContextPool.SignalPeerContexts()
 		}
 	})
 
 	// TODO: make on each peer track context done and wait when track is done make signal with removing the track from each peer side
 	// NOTE: this fix the bug when track is removed and on client side it's on remote description
-	go func() {
-		ticker := time.NewTicker(time.Second * 10)
-		for {
-			select {
-			case <-peerContext.Ctx.Done():
-				return
-			case <-ticker.C:
-				peerContext.SignalPeerConnection()
-			}
-		}
-	}()
+	// go func() {
+	// 	ticker := time.NewTicker(time.Second * 10)
+	// 	for {
+	// 		select {
+	// 		case <-peerContext.ctx.Done():
+	// 			return
+	// 		case <-ticker.C:
+	// 			peerContext.SignalPeerConnection()
+	// 		}
+	// 	}
+	// }()
 
 	message := &websocketMessage{}
 	for {
@@ -332,8 +311,8 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 			return ctrl.wsError(w, err)
 		}
 		select {
-		case <-peerContext.Ctx.Done():
-			return peerContext.Ctx.Err()
+		case <-peerContext.ctx.Done():
+			return peerContext.ctx.Err()
 		default:
 		}
 
@@ -347,10 +326,7 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 			if err := peerContext.peerConnection.AddICECandidate(candidate); err != nil {
 				return ctrl.wsError(w, err)
 			}
-
-			<-webrtc.GatheringCompletePromise(peerContext.peerConnection)
-			result, err := peerContext.peerConnection.SCTP().Transport().ICETransport().GetSelectedCandidatePair()
-			log.Println(result, err)
+			log.Printf("[ICE candidate]: %+v", candidate)
 
 		case "answer": /* Get answer from subscriber client side now peer already connected if they now ICE */
 

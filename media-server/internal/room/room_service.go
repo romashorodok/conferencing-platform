@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/sdp/v3"
@@ -29,11 +30,13 @@ var (
 	ErrRoomNotExist         = errors.New("room not exist")
 	ErrRoomIDIsEmpty        = errors.New("room id is empty")
 	ErrRoomCancelByUser     = errors.New("room canceled by user")
+	ErrTrackCancelByUser    = errors.New("track canceled by user")
 )
 
 type TrackCongestionControlWritable interface {
-	WriteRTP(p *rtp.Packet) error
+	WriteRTP(*rtp.Packet) error
 	OnFeedback(func(pkts []rtcp.Packet))
+	OnCloseAsync(func())
 }
 
 type TrackContext struct {
@@ -41,6 +44,9 @@ type TrackContext struct {
 	sender  *webrtc.RTPSender
 	twcc    *twcc.Responder
 	twccExt uint8
+
+	ctx    context.Context
+	cancel context.CancelCauseFunc
 }
 
 func (t *TrackContext) WriteRTP(p *rtp.Packet) error {
@@ -62,7 +68,18 @@ func (t *TrackContext) WriteRTP(p *rtp.Packet) error {
 func (t *TrackContext) Close() (err error) {
 	err = t.sender.ReplaceTrack(nil)
 	err = t.sender.Stop()
+	t.cancel(ErrTrackCancelByUser)
 	return
+}
+
+func (t *TrackContext) OnCloseAsync(f func()) {
+	go func() {
+		select {
+		case <-t.ctx.Done():
+			log.Println("Close track", t.track.ID(), t.track.StreamID())
+			f()
+		}
+	}()
 }
 
 func (t *TrackContext) OnFeedback(f func(pkts []rtcp.Packet)) {
@@ -76,12 +93,15 @@ type NewTrackContextParams struct {
 	SSRC     uint32
 }
 
-func NewTrackContext(params NewTrackContextParams) *TrackContext {
+func NewTrackContext(ctx context.Context, params NewTrackContextParams) *TrackContext {
+	c, cancel := context.WithCancelCause(ctx)
 	return &TrackContext{
 		track:   params.Track,
 		sender:  params.Sender,
 		twcc:    twcc.NewTransportWideCCResponder(params.SSRC),
 		twccExt: params.TWCC_EXT,
+		ctx:     c,
+		cancel:  cancel,
 	}
 }
 
@@ -98,6 +118,9 @@ type Subscriber struct {
 	loopback map[string]*LoopbackTrackContext
 	tracks   map[string]*TrackContext
 	tracksMu sync.Mutex
+
+	ctx    context.Context
+	cancel context.CancelCauseFunc
 }
 
 func (s *Subscriber) Close() (err error) {
@@ -105,14 +128,14 @@ func (s *Subscriber) Close() (err error) {
 	defer s.tracksMu.Unlock()
 
 	for id, t := range s.tracks {
-		err = t.Close()
 		err = s.peerConnection.RemoveTrack(t.sender)
+		err = t.Close()
 		delete(s.tracks, id)
 	}
 
 	for id, t := range s.loopback {
-		err = t.Close()
 		err = s.peerConnection.RemoveTrack(t.sender)
+		err = t.Close()
 		delete(s.loopback, id)
 	}
 
@@ -170,7 +193,7 @@ func (s *Subscriber) CreateTrack(t *webrtc.TrackRemote, recv *webrtc.RTPReceiver
 		}
 	}
 
-	trackContext := NewTrackContext(NewTrackContextParams{
+	trackContext := NewTrackContext(s.ctx, NewTrackContextParams{
 		Track:    track,
 		Sender:   sender,
 		TWCC_EXT: twccExt,
@@ -189,7 +212,6 @@ func (s *Subscriber) DeleteTrack(trackID string) (err error) {
 		return errors.New("Track not exist. Unable delete")
 	}
 	err = track.Close()
-
 	delete(s.tracks, trackID)
 	return err
 }
@@ -215,8 +237,8 @@ func (s *Subscriber) GetLoopbackTrack(trackID string) (track *LoopbackTrackConte
 }
 
 type PeerContext struct {
-	Ctx    context.Context
-	Cancel context.CancelCauseFunc
+	ctx    context.Context
+	cancel context.CancelCauseFunc
 
 	peerID         protocol.PeerID
 	webrtc         *webrtc.API
@@ -264,40 +286,47 @@ func (p *PeerContext) SignalPeerConnection() {
 	p.signalMu.Lock()
 	defer p.signalMu.Unlock()
 
-	signal := debounceSignal(p.signalPeerConnection, time.Millisecond*10)
+	signal := debounceSignal(p.signalPeerConnection, time.Second)
 	sleep := func() {
-		time.Sleep(time.Millisecond * 60)
+		time.Sleep(time.Millisecond * 30)
 	}
 
 	for syncAttempt := 0; ; syncAttempt++ {
+		log.Println("[Signal attempt] attempt", syncAttempt)
 		offer, err := p.setLocalDescription()
-		if errors.Is(err, webrtc.ErrConnectionClosed) {
-            log.Println("connection closed")
+		switch {
+		case errors.Is(err, ErrPeerConnectionClosed):
 			return
+		case err != nil:
+			log.Println("[Signal SDP] %s", err)
+			sleep()
+			continue
+		default:
 		}
 
 		if syncAttempt >= 25 {
 			go func() {
 				sleep()
 				p.SignalPeerConnection()
-				// signal(offer)
 			}()
 			break
 		}
 		success, err := signal(offer)
-		if !errors.Is(err, ErrPeerConnectionClosed) || success {
+		if errors.Is(err, websocket.ErrCloseSent) || success {
 			break
 		}
-		log.Printf("Signaling for %s. Err %s", p.peerID, err)
 	}
 }
 
 func (p *PeerContext) NewSubscriber() {
+	c, cancel := context.WithCancelCause(p.ctx)
 	subscriber := &Subscriber{
 		peerId:         p.peerID,
 		peerConnection: p.peerConnection,
 		loopback:       make(map[string]*LoopbackTrackContext),
 		tracks:         make(map[string]*TrackContext),
+		ctx:            c,
+		cancel:         cancel,
 	}
 	p.Subscriber = subscriber
 }
@@ -308,6 +337,7 @@ func (p *PeerContext) NewPeerConnection() error {
 		return err
 	}
 	p.peerConnection = peerConnection
+	p.NewSubscriber()
 	return nil
 }
 
@@ -315,22 +345,21 @@ func (p *PeerContext) Close() error {
 	for _, sender := range p.peerConnection.GetSenders() {
 		p.peerConnection.RemoveTrack(sender)
 	}
-
 	return p.peerConnection.Close()
 }
 
 type NewPeerContextParams struct {
-	Parent context.Context
-	WS     *threadSafeWriter
-	API    *webrtc.API
+	Context context.Context
+	WS      *threadSafeWriter
+	API     *webrtc.API
 }
 
 func NewPeerContext(params NewPeerContextParams) *PeerContext {
-	ctx, cancel := context.WithCancelCause(params.Parent)
+	ctx, cancel := context.WithCancelCause(params.Context)
 	return &PeerContext{
 		peerID: uuid.NewString(),
-		Ctx:    ctx,
-		Cancel: cancel,
+		ctx:    ctx,
+		cancel: cancel,
 		ws:     params.WS,
 		webrtc: params.API,
 	}
