@@ -1,6 +1,5 @@
 import { PropsWithChildren, createContext, useState, useEffect, Dispatch, SetStateAction } from "react";
 import { Signal, SignalEvent } from "../App";
-import { MEDIA_SERVER_WS } from "../variables";
 
 type SignalContextType = {
   signal: Signal | null,

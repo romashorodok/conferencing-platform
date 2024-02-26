@@ -13,7 +13,6 @@ import { MediaStreamContext, setAudioMute, setVideoMute } from './rtc/MediaStrea
 import * as Popover from '@radix-ui/react-popover';
 import * as ScrollArea from '@radix-ui/react-scroll-area';
 import LoadingDots from './base/loading-dots'
-import AppLayout from './AppLayout'
 import { MEDIA_SERVER_WS } from './variables'
 import { RoomMediaStreamListContext } from './rtc/RoomMediaStreamListProvider'
 
@@ -603,8 +602,8 @@ function App() {
 
   return (
     <>
-      <button onClick={startNormal}>Normal</button>
-      <button onClick={startFaceDetection}>Face detection</button>
+      <button onClick={() => startNormal()}>Normal</button>
+      <button onClick={() => startFaceDetection()}>Face detection</button>
 
       <CameraComponent />
       <Room />

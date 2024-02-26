@@ -7,8 +7,8 @@ type MediaStreamContextType = {
   mediaStreamReady: boolean
   onPageMountMediaStreamMutex: Mutex | null
 
-  startFaceDetection: Promise<() => void>
-  startNormal: Promise<() => void>
+  startFaceDetection: (unlock?: Promise<() => void>) => Promise<void>
+  startNormal: (unlock?: Promise<() => void>) => Promise<void>
 };
 
 export const MediaStreamContext = createContext<MediaStreamContextType>(undefined!)
