@@ -5,101 +5,29 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"log"
 	"log/slog"
 	"net/http"
-	"runtime"
 	"sync"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	echo "github.com/labstack/echo/v4"
-	"github.com/pion/rtcp"
 	webrtc "github.com/pion/webrtc/v3"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/protocol"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/rtpstats"
+	"github.com/romashorodok/conferencing-platform/media-server/pkg/sfu"
 	"github.com/romashorodok/conferencing-platform/pkg/controller/room"
 	globalprotocol "github.com/romashorodok/conferencing-platform/pkg/protocol"
-	"go.uber.org/atomic"
+	"github.com/romashorodok/conferencing-platform/pkg/wsutils"
 	"go.uber.org/fx"
 )
-
-var (
-	ErrOnStateClosed           = errors.New("Closed connection")
-	ErrUnsupportedMessageEvent = errors.New("Unsupported message event")
-)
-
-/* Utils start */
-
-// ParallelExec will executes the given function with each element of vals, if len(vals) >= parallelThreshold,
-// will execute them in parallel, with the given step size. So fn must be thread-safe.
-func ParallelExec[T any](vals []T, parallelThreshold, step uint64, fn func(T)) {
-	if uint64(len(vals)) < parallelThreshold {
-		for _, v := range vals {
-			fn(v)
-		}
-		return
-	}
-
-	// parallel - enables much more efficient multi-core utilization
-	start := atomic.NewUint64(0)
-	end := uint64(len(vals))
-
-	var wg sync.WaitGroup
-	numCPU := runtime.NumCPU()
-	wg.Add(numCPU)
-	for p := 0; p < numCPU; p++ {
-		go func() {
-			defer wg.Done()
-			for {
-				n := start.Add(step)
-				if n >= end+step {
-					return
-				}
-
-				for i := n - step; i < n && i < end; i++ {
-					fn(vals[i])
-				}
-			}
-		}()
-	}
-	wg.Wait()
-}
-
-/* Utils end */
-
-type SdpAnswer struct {
-	Type string `json:"type"`
-	Sdp  string `json:"sdp"`
-}
 
 type websocketMessage struct {
 	Event string `json:"event"`
 	Data  string `json:"data"`
 }
 
-type threadSafeWriter struct {
-	*websocket.Conn
-	sync.Mutex
-}
-
-func (t *threadSafeWriter) WriteJSON(val interface{}) error {
-	t.Lock()
-	defer t.Unlock()
-
-	return t.Conn.WriteJSON(val)
-}
-
-func (t *threadSafeWriter) Close() error {
-	return t.Conn.Close()
-}
-
-func (t *threadSafeWriter) ReadJSON(val any) error {
-	return t.Conn.ReadJSON(val)
-}
-
-func (ctrl *roomController) wsError(w *threadSafeWriter, err error) error {
+func (ctrl *roomController) wsError(w *wsutils.ThreadSafeWriter, err error) error {
 	ctrl.logger.Error(fmt.Sprintf("%s | Err: %s", w.Conn.RemoteAddr(), err))
 	w.WriteJSON(&websocketMessage{
 		Event: "error",
@@ -126,7 +54,7 @@ func (ctrl *roomController) RoomControllerRoomNotifier(ctx echo.Context) error {
 		return err
 	}
 
-	w := &threadSafeWriter{Conn: conn}
+	w := wsutils.NewThreadSafeWriter(conn)
 	defer w.Close()
 
 	id := uuid.NewString()
@@ -157,137 +85,48 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 		return err
 	}
 
-	w := &threadSafeWriter{Conn: conn}
+	w := wsutils.NewThreadSafeWriter(conn)
 	defer w.Close()
 
-	peerContext := NewPeerContext(NewPeerContextParams{
+	ctrl.peerConnectionMu.Lock()
+	peerContext, err := sfu.NewPeerContext(sfu.NewPeerContextParams{
 		Context: ctx.Request().Context(),
 		API:     ctrl.webrtc,
 		WS:      w,
 	})
-	ctrl.peerConnectionMu.Lock()
-	if err := peerContext.NewPeerConnection(); err != nil {
+	peerContext.SetStats(<-ctrl.stats)
+	ctrl.peerConnectionMu.Unlock()
+	if err != nil {
 		return ctrl.wsError(w, err)
 	}
-	defer peerContext.cancel(errors.New("Implicit connection close"))
 	defer func() {
+		peerContext.Close(sfu.ErrPeerConnectionClosed)
 		roomCtx.peerContextPool.Remove(peerContext)
 		ctrl.roomNotifier.DispatchUpdateRooms()
-		peerContext.Close()
 	}()
-	peerContext.stats = <-ctrl.stats
-	ctrl.peerConnectionMu.Unlock()
 
-	// Declare publisher transceiver for all kinds
-	for _, typ := range []webrtc.RTPCodecType{webrtc.RTPCodecTypeVideo, webrtc.RTPCodecTypeAudio} {
-		if _, err := peerContext.peerConnection.AddTransceiverFromKind(typ, webrtc.RTPTransceiverInit{
-			Direction: webrtc.RTPTransceiverDirectionRecvonly,
-		}); err != nil {
-			return ctrl.wsError(w, err)
-		}
+	if err = peerContext.AddTransceiver([]webrtc.RTPCodecType{
+		webrtc.RTPCodecTypeVideo,
+		webrtc.RTPCodecTypeAudio,
+	}); err != nil {
+		return ctrl.wsError(w, err)
 	}
 
-	peerContext.peerConnection.OnTrack(func(t *webrtc.TrackRemote, recv *webrtc.RTPReceiver) {
-		defer func() {
-			for _, ctx := range roomCtx.peerContextPool.Get() {
-				_ = ctx.Subscriber.DeleteTrack(t.ID())
-			}
-		}()
+	peerContext.OnTrack(roomCtx.peerContextPool)
 
-		// go func() {
-		// 	for {
-		// 		time.Sleep(time.Second * 5)
-		//               stat := peerContext.stats.GetGetter().Get(uint32(t.SSRC()))
-		//               log.Printf("%+v", stat)
-		// 	}
-		// }()
-
-		var threshold uint64 = 1000000
-		var step uint64 = 2
-		log.Println("On track", t.ID())
-
-		onTrackFeedback := func(pkts []rtcp.Packet) {
-			if err := peerContext.peerConnection.WriteRTCP(pkts); err != nil {
-				log.Printf("transport-cc ERROR | %s", err)
-			}
-		}
-
-		for {
-			select {
-			case <-peerContext.ctx.Done():
-				return
-			default:
-			}
-
-			pkt, _, err := t.ReadRTP()
-			if err != nil {
-				if errors.Is(err, io.EOF) {
-					return
-				}
-				continue
-			}
-
-			peerContexts := roomCtx.peerContextPool.Get()
-
-			ParallelExec(peerContexts, threshold, step, func(peer *PeerContext) {
-				select {
-				case <-peer.ctx.Done():
-					return
-				default:
-				}
-
-				var track TrackCongestionControlWritable
-				var exist bool
-				var err error
-
-				switch {
-				case peerContext.peerID == peer.peerID:
-					track, exist = peer.Subscriber.GetLoopbackTrack(t.ID())
-					if !exist {
-						log.Println("Create loopback track")
-						track, err = peer.Subscriber.LoopbackTrack(t, recv)
-						track.OnFeedback(onTrackFeedback)
-						track.OnCloseAsync(peer.SignalPeerConnection)
-					}
-
-				default:
-					track, exist = peer.Subscriber.HasTrack(t.ID())
-					if !exist {
-						log.Println("Create local track track")
-						track, err = peer.Subscriber.CreateTrack(t, recv)
-						track.OnFeedback(onTrackFeedback)
-						track.OnCloseAsync(peer.SignalPeerConnection)
-					}
-				}
-
-				if err == nil && !exist {
-					go peer.SignalPeerConnection()
-				}
-
-				if track == nil {
-					return
-				}
-
-				// WriteRTP takes about 50µs
-				track.WriteRTP(pkt)
-			})
-		}
-	})
-
-	peerContext.peerConnection.OnConnectionStateChange(func(p webrtc.PeerConnectionState) {
+	peerContext.OnConnectionStateChange(func(p webrtc.PeerConnectionState) {
 		switch p {
 		case webrtc.PeerConnectionStateConnected:
 			if err = roomCtx.peerContextPool.Add(peerContext); err != nil {
 				ctrl.wsError(w, err)
-				peerContext.cancel(errors.New("Unable add into pool. On PeerConnectionStateConnected"))
+				peerContext.Close(errors.Join(errors.New("unable add into pool."), sfu.ErrPeerConnectionClosed))
 				return
 			}
 			ctrl.roomNotifier.DispatchUpdateRooms()
 
 		case webrtc.PeerConnectionStateClosed, webrtc.PeerConnectionStateFailed:
-			peerContext.Close()
-			peerContext.cancel(ErrOnStateClosed)
-			roomCtx.peerContextPool.SignalPeerContexts()
+			peerContext.Close(sfu.ErrPeerConnectionClosed)
+			roomCtx.peerContextPool.DispatchOffers()
 		}
 	})
 
@@ -305,79 +144,37 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 	// 	}
 	// }()
 
+	if _, err := peerContext.CreateDataChannel("_negotiation", nil); err != nil {
+		return ctrl.wsError(w, err)
+	}
+
 	message := &websocketMessage{}
 	for {
 		if err := w.ReadJSON(message); err != nil {
 			return ctrl.wsError(w, err)
 		}
+
 		select {
-		case <-peerContext.ctx.Done():
-			return peerContext.ctx.Err()
+		case <-peerContext.Done():
+			return peerContext.Err()
 		default:
 		}
 
 		switch message.Event {
 		case "candidate":
-			candidate := webrtc.ICECandidateInit{}
-			if err := json.Unmarshal([]byte(message.Data), &candidate); err != nil {
+			if err := peerContext.Signal.OnCandidate([]byte(message.Data)); err != nil {
 				return ctrl.wsError(w, err)
 			}
-
-			if err := peerContext.peerConnection.AddICECandidate(candidate); err != nil {
+		case "answer":
+			if err := peerContext.Signal.OnAnswer([]byte(message.Data)); err != nil {
 				return ctrl.wsError(w, err)
 			}
-			log.Printf("[ICE candidate]: %+v", candidate)
-
-		case "answer": /* Get answer from subscriber client side now peer already connected if they now ICE */
-
-			var answer SdpAnswer
-			if err := json.Unmarshal([]byte(message.Data), &answer); err != nil {
+		case "subscribe":
+			if err := peerContext.Signal.DispatchOffer(); err != nil {
 				return ctrl.wsError(w, err)
 			}
-
-			if err := peerContext.peerConnection.SetRemoteDescription(webrtc.SessionDescription{
-				Type: webrtc.SDPTypeAnswer,
-				SDP:  answer.Sdp,
-			}); err != nil {
-				return ctrl.wsError(w, err)
-			}
-
-		case "subscribe": /* Send initial offer when someone start subscribing */
-
-			var subscribeMessage SubscribeMessage
-			var offerConfig webrtc.OfferOptions
-
-			json.Unmarshal([]byte(message.Data), &subscribeMessage)
-
-			if subscribeMessage.RestartICE {
-				offerConfig.ICERestart = true
-			}
-			log.Printf("%+v, %+v", offerConfig, subscribeMessage)
-
-			if _, err := peerContext.peerConnection.CreateDataChannel("_negotiation", nil); err != nil {
-				return ctrl.wsError(w, err)
-			}
-
-			offer, err := peerContext.peerConnection.CreateOffer(&offerConfig)
-			if err != nil {
-				return ctrl.wsError(w, err)
-			}
-
-			if err = peerContext.peerConnection.SetLocalDescription(offer); err != nil {
-				return ctrl.wsError(w, err)
-			}
-
-			offerJSON, err := json.Marshal(offer)
-			if err != nil {
-				return ctrl.wsError(w, err)
-			}
-
-			if err = w.WriteJSON(&websocketMessage{
-				Event: "offer",
-				Data:  string(offerJSON),
-			}); err != nil {
-				return ctrl.wsError(w, err)
-			}
+		default:
+			return ctrl.wsError(w, errors.New("wrong message event"))
 		}
 	}
 }
@@ -429,7 +226,7 @@ func (ctrl *roomController) RoomControllerRoomCreate(ctx echo.Context) error {
 // }
 
 func (ctrl *roomController) Resolve(c *echo.Echo) error {
-	go ctrl.roomNotifier.OnUpdateRooms(context.Background(), func(w *threadSafeWriter) {
+	go ctrl.roomNotifier.OnUpdateRooms(context.Background(), func(w *wsutils.ThreadSafeWriter) {
 		w.WriteJSON(&websocketMessage{
 			Event: "update-rooms",
 			Data:  "",
