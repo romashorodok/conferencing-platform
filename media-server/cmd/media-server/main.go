@@ -11,6 +11,16 @@ import (
 	"go.uber.org/fx"
 )
 
+/*
+#cgo LDFLAGS: -lstdc++
+
+#cgo pkg-config: pipelines-1.0
+#cgo pkg-config: rtpvp8-1.0
+#include "pipelines.h"
+#include "rtpvp8/rtpvp8.h"
+*/
+import "C"
+
 type CreateTestRoom_Params struct {
 	fx.In
 
@@ -32,6 +42,8 @@ func CreateTestRoom(params CreateTestRoom_Params) {
 }
 
 func main() {
+	C.setup()
+	C.print_version()
 	fx.New(
 		fx.Provide(
 			room.NewRoomService,

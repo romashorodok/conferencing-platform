@@ -6,3 +6,12 @@ media-server/subprojects/packagecache
 media-server/subprojects/pcre2-10.42
 media-server/subprojects/pcre2.wrap
 builddir
+.ccls-cache
+media-server/subprojects/glib-2.78.3
+media-server/subprojects/gstreamer-1.0
+media-server/subprojects/libffi
+media-server/subprojects/glib.wrap
+media-server/subprojects/gvdb.wrap
+media-server/subprojects/vpx
+media-server/subprojects/libffi.wrap
+media-server/subprojects/vpx.wrap

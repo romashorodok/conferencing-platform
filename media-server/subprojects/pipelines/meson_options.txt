@@ -1,0 +1,2 @@
+option('pipelines', type : 'feature', value: 'enabled', description: 'Enable pipeline processing')
+
