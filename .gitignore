@@ -2,3 +2,7 @@ examples
 gen
 spec
 result
+media-server/subprojects/packagecache
+media-server/subprojects/pcre2-10.42
+media-server/subprojects/pcre2.wrap
+builddir

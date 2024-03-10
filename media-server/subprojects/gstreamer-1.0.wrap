@@ -1,0 +1,9 @@
+[wrap-git]
+directory=gstreamer-1.0
+url=https://gitlab.freedesktop.org/gstreamer/gstreamer.git
+revision=1.23.90
+depth=1
+
+[provide]
+dependency_names = gstreamer-1.0, gstreamer-base-1.0, gstreamer-video-1.0, gstreamer-audio-1.0
+
