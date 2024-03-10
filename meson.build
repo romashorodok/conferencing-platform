@@ -12,7 +12,7 @@ pipelines_proj = subproject('pipelines')
 
 go = find_program('go')
 
-cmd_path = join_paths(meson.current_source_dir(), 'cmd/media-server')
+cmd_path = join_paths(meson.current_source_dir(), 'media-server/cmd/media-server')
 pkg_config_path = join_paths(meson.current_build_dir(), 'meson-uninstalled')
 go_cache_path = join_paths(meson.current_build_dir(), 'go-build')
 
