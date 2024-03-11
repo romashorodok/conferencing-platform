@@ -11,6 +11,7 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	webrtc "github.com/pion/webrtc/v3"
+	"github.com/romashorodok/conferencing-platform/media-server/pkg/pipelines"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/protocol"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/rtpstats"
 	"github.com/romashorodok/conferencing-platform/pkg/executils"
@@ -20,12 +21,13 @@ type PeerContext struct {
 	ctx    context.Context
 	cancel context.CancelCauseFunc
 
-	PeerID         protocol.PeerID
-	webrtc         *webrtc.API
-	peerConnection *webrtc.PeerConnection
-	stats          *rtpstats.RtpStats
-	Signal         *Signal
-	Subscriber     *Subscriber
+	PeerID           protocol.PeerID
+	webrtc           *webrtc.API
+	peerConnection   *webrtc.PeerConnection
+	stats            *rtpstats.RtpStats
+	Signal           *Signal
+	Subscriber       *Subscriber
+	pipeAllocContext *pipelines.AllocatorsContext
 }
 
 type trackWritable interface {
@@ -36,10 +38,16 @@ type trackWritable interface {
 
 func (p *PeerContext) OnTrack(pool *PeerContextPool) {
 	p.peerConnection.OnTrack(func(t *webrtc.TrackRemote, recv *webrtc.RTPReceiver) {
+		pipe, err := p.pipeAllocContext.Allocate(pipelines.RTP_VP8_BASE)
+		log.Println(pipe, err)
+		_ = err
+		pipe.Start()
+
 		defer func() {
 			for _, peer := range pool.Get() {
 				_ = peer.Subscriber.DeleteTrack(t.ID())
 			}
+			pipe.Close()
 		}()
 		log.Println("On track", t.ID())
 
@@ -111,6 +119,11 @@ func (p *PeerContext) OnTrack(pool *PeerContextPool) {
 				if track == nil {
 					return
 				}
+
+				go func() {
+					data, _ := pkt.Marshal()
+					pipe.Write(data)
+				}()
 
 				// WriteRTP takes about 50µs
 				track.WriteRTP(pkt)
@@ -218,18 +231,20 @@ func (p *PeerContext) newPeerConnection() error {
 }
 
 type NewPeerContextParams struct {
-	Context context.Context
-	WS      WebsocketWriter
-	API     *webrtc.API
+	Context          context.Context
+	WS               WebsocketWriter
+	API              *webrtc.API
+	PipeAllocContext *pipelines.AllocatorsContext
 }
 
 func NewPeerContext(params NewPeerContextParams) (*PeerContext, error) {
 	ctx, cancel := context.WithCancelCause(params.Context)
 	p := &PeerContext{
-		PeerID: uuid.NewString(),
-		ctx:    ctx,
-		cancel: cancel,
-		webrtc: params.API,
+		PeerID:           uuid.NewString(),
+		ctx:              ctx,
+		cancel:           cancel,
+		webrtc:           params.API,
+		pipeAllocContext: params.PipeAllocContext,
 	}
 	if err := p.newPeerConnection(); err != nil {
 		return nil, err

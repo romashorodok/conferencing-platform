@@ -6,8 +6,8 @@ import (
 )
 
 type PeerContextPool struct {
-	subscriberMu sync.Mutex
-	pool         map[string]*PeerContext
+	subscriberMu     sync.Mutex
+	pool             map[string]*PeerContext
 }
 
 func (s *PeerContextPool) DispatchOffers() {

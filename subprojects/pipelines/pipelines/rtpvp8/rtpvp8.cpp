@@ -18,24 +18,25 @@ BasePipeline::~BasePipeline() {
 
 GstFlowReturn on_sample_vp8_pipeline(GstAppSink *sink, gpointer data) {
   GstSample *sample = gst_app_sink_pull_sample(sink);
+  std::cout << "test1  test" << std::endl;
   if (sample) {
     // Get sample details
-    GstCaps *caps = gst_sample_get_caps(sample);
+    // GstCaps *caps = gst_sample_get_caps(sample);
     GstBuffer *buffer = gst_sample_get_buffer(sample);
 
     // Print sample details
-    if (caps) {
-      gchar *caps_str = gst_caps_to_string(caps);
-      g_print("Received sample with caps: %s\n", caps_str);
-      g_free(caps_str);
-    }
+    // if (caps) {
+    //   gchar *caps_str = gst_caps_to_string(caps);
+    // g_print("Received sample with caps: %s\n", caps_str);
+    // g_free(caps_str);
+    // }
 
     if (buffer) {
       gpointer copy = nullptr;
       gsize copy_size = 0;
 
-      g_print("Received sample with size: %lu, timestamp: %llu \n",
-              gst_buffer_get_size(buffer), GST_BUFFER_TIMESTAMP(buffer));
+      // g_print("Received sample with size: %lu, timestamp: %llu \n",
+      //         gst_buffer_get_size(buffer), GST_BUFFER_TIMESTAMP(buffer));
 
       gst_buffer_extract_dup(buffer, 0, gst_buffer_get_size(buffer), &copy,
                              &copy_size);
@@ -49,7 +50,7 @@ GstFlowReturn on_sample_vp8_pipeline(GstAppSink *sink, gpointer data) {
   return GST_FLOW_OK;
 }
 
-ProxyPipeRtpVP8::ProxyPipeRtpVP8(const char *name) : BasePipeline(name) {
+RtpVP8::RtpVP8(const char *name) : BasePipeline(name) {
   auto appsrc = this->getAppsrc();
   g_object_set(appsrc, "format", GST_FORMAT_TIME, "is-live", TRUE, nullptr);
   g_object_set(appsrc, "do-timestamp", TRUE, nullptr);
@@ -129,7 +130,7 @@ ProxyPipeRtpVP8::ProxyPipeRtpVP8(const char *name) : BasePipeline(name) {
                              NULL, NULL);
 }
 
-ProxyPipeRtpVP8::~ProxyPipeRtpVP8() {
+RtpVP8::~RtpVP8() {
   std::cout << "destory from rtp VP8 pipe" << std::endl;
   // gst_element_deinit(this->rtpsession);
   gst_element_deinit(this->queueRtpvp8depay);
@@ -139,7 +140,7 @@ ProxyPipeRtpVP8::~ProxyPipeRtpVP8() {
   // gst_element_deinit(this->printsink);
 }
 
-extern "C" void start_proxy_pipe(void *pipe) {
+extern "C" void start_pipe(void *pipe) {
   auto _pipe = dynamic_cast<BasePipeline *>(static_cast<BasePipeline *>(pipe));
   if (_pipe == nullptr)
     return;
@@ -149,7 +150,7 @@ extern "C" void start_proxy_pipe(void *pipe) {
   gst_element_set_state(pipeline, GST_STATE_PLAYING);
 }
 
-extern "C" void write_proxy_pipe(void *pipe, void *buffer, int len) {
+extern "C" void write_pipe(void *pipe, void *buffer, int len) {
   auto _pipe = dynamic_cast<BasePipeline *>(static_cast<BasePipeline *>(pipe));
   if (_pipe == nullptr)
     return;
@@ -171,13 +172,11 @@ extern "C" void write_proxy_pipe(void *pipe, void *buffer, int len) {
   free(buffer);
 }
 
-extern "C" void delete_proxy_pipe(void *pipe) {
+extern "C" void delete_pipe(void *pipe) {
   auto _pipe = dynamic_cast<BasePipeline *>(static_cast<BasePipeline *>(pipe));
   if (_pipe == nullptr)
     return;
   delete _pipe;
 }
 
-extern "C" void *new_proxy_pipe_rtp_vp8(const char *name) {
-  return new ProxyPipeRtpVP8(name);
-}
+extern "C" void *new_pipe_rtp_vp8(const char *name) { return new RtpVP8(name); }

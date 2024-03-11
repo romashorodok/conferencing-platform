@@ -25,10 +25,10 @@ private:
   GstElement *appsrc;
 };
 
-class ProxyPipeRtpVP8 : public BasePipeline {
+class RtpVP8 : public BasePipeline {
 public:
-  ProxyPipeRtpVP8(const char *name);
-  ~ProxyPipeRtpVP8();
+  RtpVP8(const char *name);
+  ~RtpVP8();
 
 private:
   GstElement *testsrc;
@@ -46,12 +46,11 @@ private:
 #endif
 extern void CGO_onSampleBuffer(void *buffer, int size, int duration);
 
-void write_proxy_pipe(void *pipe, void *buffer, int len);
-void start_proxy_pipe(void *pipe);
-void delete_proxy_pipe(void *pipe);
-void *new_proxy_pipe_rtp_vp8(const char *name);
+void write_pipe(void *pipe, void *buffer, int len);
+void start_pipe(void *pipe);
+void delete_pipe(void *pipe);
+void *new_pipe_rtp_vp8(const char *name);
 #ifdef __cplusplus
 }
 #endif
 #endif
-

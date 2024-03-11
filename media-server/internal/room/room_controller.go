@@ -13,6 +13,7 @@ import (
 	"github.com/gorilla/websocket"
 	echo "github.com/labstack/echo/v4"
 	webrtc "github.com/pion/webrtc/v3"
+	"github.com/romashorodok/conferencing-platform/media-server/pkg/pipelines"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/protocol"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/rtpstats"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/sfu"
@@ -45,6 +46,7 @@ type roomController struct {
 	logger           *slog.Logger
 	peerConnectionMu sync.Mutex
 	roomNotifier     *RoomNotifier
+	pipeAllocContext *pipelines.AllocatorsContext
 }
 
 func (ctrl *roomController) RoomControllerRoomNotifier(ctx echo.Context) error {
@@ -90,9 +92,10 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 
 	ctrl.peerConnectionMu.Lock()
 	peerContext, err := sfu.NewPeerContext(sfu.NewPeerContextParams{
-		Context: ctx.Request().Context(),
-		API:     ctrl.webrtc,
-		WS:      w,
+		Context:          ctx.Request().Context(),
+		API:              ctrl.webrtc,
+		WS:               w,
+		PipeAllocContext: ctrl.pipeAllocContext,
 	})
 	peerContext.SetStats(<-ctrl.stats)
 	ctrl.peerConnectionMu.Unlock()
@@ -251,11 +254,12 @@ type newRoomController_Params struct {
 	fx.In
 	Lifecycle fx.Lifecycle
 
-	RoomService  *RoomService
-	API          *webrtc.API
-	Logger       *slog.Logger
-	Stats        chan *rtpstats.RtpStats
-	RoomNotifier *RoomNotifier
+	RoomService      *RoomService
+	API              *webrtc.API
+	Logger           *slog.Logger
+	Stats            chan *rtpstats.RtpStats
+	RoomNotifier     *RoomNotifier
+	PipeAllocContext *pipelines.AllocatorsContext
 }
 
 func NewRoomController(params newRoomController_Params) *roomController {
@@ -268,6 +272,7 @@ func NewRoomController(params newRoomController_Params) *roomController {
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
-		roomNotifier: params.RoomNotifier,
+		roomNotifier:     params.RoomNotifier,
+		pipeAllocContext: params.PipeAllocContext,
 	}
 }

@@ -9,6 +9,8 @@ cc = meson.get_compiler('c')
 std = cc.find_library('stdc++', required: true)
 
 pipelines_proj = subproject('pipelines')
+rtpvp8_dep = pipelines_proj.get_variable('rtpvp8_lib')
+pipeline_dep = pipelines_proj.get_variable('pipelines_lib') 
 
 go = find_program('go')
 
@@ -23,6 +25,7 @@ goenv.set('GOCACHE', go_cache_path)
 go_mod = custom_target('golang',
   output: 'media-server',
   env: goenv,
+  depends: [rtpvp8_dep, pipeline_dep],
   command: [go, 'build', '-o', '@OUTPUT@', cmd_path],
   install: true,
   install_dir: '',

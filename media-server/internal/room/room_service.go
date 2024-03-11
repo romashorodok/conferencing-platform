@@ -17,9 +17,9 @@ import (
 )
 
 var (
-	ErrRoomAlreadyExists    = errors.New("room already exists")
-	ErrRoomNotExist         = errors.New("room not exist")
-	ErrRoomCancelByUser     = errors.New("room canceled by user")
+	ErrRoomAlreadyExists = errors.New("room already exists")
+	ErrRoomNotExist      = errors.New("room not exist")
+	ErrRoomCancelByUser  = errors.New("room canceled by user")
 )
 
 type RoomNotifier struct {
@@ -77,8 +77,8 @@ func NewRoomNotifier() *RoomNotifier {
 }
 
 type roomContext struct {
-	roomID          protocol.RoomID
-	peerContextPool *sfu.PeerContextPool
+	roomID           protocol.RoomID
+	peerContextPool  *sfu.PeerContextPool
 }
 
 func (r *roomContext) Info() room.Room {
@@ -97,23 +97,23 @@ func (r *roomContext) Info() room.Room {
 }
 
 type NewRoomContextParams struct {
-	RoomID protocol.RoomID
+	RoomID           protocol.RoomID
 }
 
 func NewRoomContext(params NewRoomContextParams) *roomContext {
 	return &roomContext{
-		roomID:          params.RoomID,
-		peerContextPool: sfu.NewPeerContextPool(),
+		roomID:           params.RoomID,
+		peerContextPool:  sfu.NewPeerContextPool(),
 	}
 }
 
 type RoomService struct {
 	sync.Mutex
 
-	webrtcAPI      *webrtc.API
-	logger         *slog.Logger
-	roomContextMap map[protocol.RoomID]*roomContext
-	roomNotifier   *RoomNotifier
+	webrtcAPI        *webrtc.API
+	logger           *slog.Logger
+	roomContextMap   map[protocol.RoomID]*roomContext
+	roomNotifier     *RoomNotifier
 }
 
 func (s *RoomService) GetRoom(roomID string) *roomContext {
@@ -160,7 +160,7 @@ func (s *RoomService) CreateRoom(option *protocol.RoomCreateOption) (*roomContex
 	}
 
 	s.roomContextMap[roomID] = NewRoomContext(NewRoomContextParams{
-		RoomID: roomID,
+		RoomID:           roomID,
 	})
 
 	room, exist := s.roomContextMap[roomID]
@@ -176,9 +176,9 @@ func (s *RoomService) CreateRoom(option *protocol.RoomCreateOption) (*roomContex
 type NewRoomServiceParams struct {
 	fx.In
 
-	WebrtcAPI    *webrtc.API
-	Logger       *slog.Logger
-	RoomNotifier *RoomNotifier
+	WebrtcAPI        *webrtc.API
+	Logger           *slog.Logger
+	RoomNotifier     *RoomNotifier
 }
 
 func NewRoomService(params NewRoomServiceParams) *RoomService {
