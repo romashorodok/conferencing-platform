@@ -1,6 +1,7 @@
 .DS_Store
 examples
 gen
+venv
 spec
 result
 subprojects/packagecache

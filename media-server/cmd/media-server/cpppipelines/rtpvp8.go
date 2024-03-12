@@ -1,10 +1,6 @@
 package cpppipelines
 
 /*
-#cgo LDFLAGS: -lstdc++
-
-#cgo pkg-config: pipelines-1.0
-#cgo pkg-config: rtpvp8-1.0
 #include "pipelines/pipelines.h"
 #include "pipelines/rtpvp8/rtpvp8.h"
 */

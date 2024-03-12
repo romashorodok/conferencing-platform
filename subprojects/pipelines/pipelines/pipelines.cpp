@@ -6,6 +6,8 @@
 void setup() { gst_init(0, nullptr); }
 
 void print_version() {
+    std::cout << "hello test 1.1.10" << std::endl;
+
   guint major, minor, micro, nano;
   gst_version(&major, &minor, &micro, &nano);
 
@@ -15,7 +17,6 @@ void print_version() {
   GstElement *result = gst_element_factory_make("vp8enc", nullptr);
 
   std::cout << result << std::endl;
-
   std::cout << GST_ELEMENT_NAME(result) << std::endl;
 }
 

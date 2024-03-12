@@ -18,7 +18,8 @@ BasePipeline::~BasePipeline() {
 
 GstFlowReturn on_sample_vp8_pipeline(GstAppSink *sink, gpointer data) {
   GstSample *sample = gst_app_sink_pull_sample(sink);
-  std::cout << "test1  test" << std::endl;
+  // std::cout << "test1  test" << std::endl;
+  std::cout << "--test1" << std::endl;
   if (sample) {
     // Get sample details
     // GstCaps *caps = gst_sample_get_caps(sample);

@@ -1,10 +1,6 @@
 package cpppipelines
 
 /*
-#cgo LDFLAGS: -lstdc++
-
-#cgo pkg-config: pipelines-1.0
-#cgo pkg-config: rtpvp8-1.0
 #include "pipelines/pipelines.h"
 #include "pipelines/rtpvp8/rtpvp8.h"
 */
@@ -22,4 +18,5 @@ func CGO_onSampleBuffer(buffer unsafe.Pointer, size C.int, duration C.int) {
 
 func GstreamerMainLoopSetup() {
 	C.setup()
+    C.print_version()
 }

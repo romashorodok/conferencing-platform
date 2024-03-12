@@ -16,13 +16,12 @@ pipelines_headers = [
 ]
 
 if pipelines.enabled()
-
-  pipelines_lib = static_library('pipelines-@0@'.format(api_version), 
+  pipelines_lib = library('pipelines-@0@'.format(api_version),
     pipelines_sources + pipelines_headers,
     dependencies: [gstreamer_full_dep],
   )
 
-  pipelines_dep = declare_dependency(link_with: pipelines_lib,
+  pipelines_dep = declare_dependency(link_whole: pipelines_lib,
     include_directories: [pipelines_inc],
     dependencies: [gstreamer_full_dep],
   )
