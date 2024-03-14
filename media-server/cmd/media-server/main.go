@@ -6,9 +6,9 @@ import (
 	"github.com/romashorodok/conferencing-platform/media-server/cmd/media-server/cpppipelines"
 	"github.com/romashorodok/conferencing-platform/media-server/internal/ingress"
 	"github.com/romashorodok/conferencing-platform/media-server/internal/room"
-	"github.com/romashorodok/conferencing-platform/media-server/pkg/pipelines"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/protocol"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/service"
+	"github.com/romashorodok/conferencing-platform/media-server/pkg/sfu"
 	globalprotocol "github.com/romashorodok/conferencing-platform/pkg/protocol"
 	"go.uber.org/fx"
 )
@@ -33,9 +33,9 @@ func CreateTestRoom(params CreateTestRoom_Params) {
 	_ = room
 }
 
-func NewPipelinesAllocatorsContext() *pipelines.AllocatorsContext {
-	allocContext := pipelines.NewAllocatorsContext()
-	allocContext.Register(pipelines.RTP_VP8_BASE, pipelines.Allocator(cpppipelines.NewRtpVP8))
+func NewPipelinesAllocatorsContext() *sfu.AllocatorsContext {
+	allocContext := sfu.NewAllocatorsContext()
+	allocContext.Register(sfu.RTP_VP8_DUMMY, sfu.Allocator(cpppipelines.NewRtpVP8))
 	return allocContext
 }
 

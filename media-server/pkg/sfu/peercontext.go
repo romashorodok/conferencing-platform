@@ -5,16 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
+	"time"
 
 	"github.com/google/uuid"
-	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	webrtc "github.com/pion/webrtc/v3"
-	"github.com/romashorodok/conferencing-platform/media-server/pkg/pipelines"
+	"github.com/pion/webrtc/v3/pkg/media"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/protocol"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/rtpstats"
-	"github.com/romashorodok/conferencing-platform/pkg/executils"
 )
 
 type PeerContext struct {
@@ -27,32 +25,75 @@ type PeerContext struct {
 	stats            *rtpstats.RtpStats
 	Signal           *Signal
 	Subscriber       *Subscriber
-	pipeAllocContext *pipelines.AllocatorsContext
+	pipeAllocContext *AllocatorsContext
 }
 
 type trackWritable interface {
 	WriteRTP(p *rtp.Packet) error
-	OnFeedback(func(pkts []rtcp.Packet))
+	OnSample(func(*media.Sample))
 	OnCloseAsync(func())
 }
 
-func (p *PeerContext) OnTrack(pool *PeerContextPool) {
+type trackSampleWritable interface {
+	trackWritable
+	WriteSample(*media.Sample) error
+}
+
+func (p *PeerContext) OnTrack(peerContextPool *PeerContextPool) {
 	p.peerConnection.OnTrack(func(t *webrtc.TrackRemote, recv *webrtc.RTPReceiver) {
-		pipe, err := p.pipeAllocContext.Allocate(pipelines.RTP_VP8_BASE)
-		log.Println(pipe, err)
-		_ = err
-		pipe.Start()
+		// defer func() {
+		// 	for _, peer := range pool.Get() {
+		// 		_ = peer.Subscriber.DeleteTrack(t.ID())
+		// 	}
+		// }()
+
+		tctx, err := p.Subscriber.Track(t, recv)
+		if err != nil {
+			err = errors.Join(err, ErrUnsupportedTrackCodec)
+			_ = p.Signal.conn.WriteJSON(err)
+			_ = p.Close(err)
+			return
+		}
 
 		defer func() {
-			for _, peer := range pool.Get() {
-				_ = peer.Subscriber.DeleteTrack(t.ID())
-			}
-			pipe.Close()
+			_ = tctx.Close()
 		}()
-		log.Println("On track", t.ID())
+		p.Signal.DispatchOffer()
 
-		var threshold uint64 = 1000000
-		var step uint64 = 2
+		// var track trackSampleWritable
+		switch t.Codec().MimeType {
+		case webrtc.MimeTypeOpus:
+			// track = NewTrackContextOpus(tctx)
+		case webrtc.MimeTypeVP8:
+			// track = NewTrackContextVp8(tctx)
+			// pipe := pipelines.NewPipelineDummy(t.Codec().RTPCodecCapability)
+			// _ = tctx.SetPipelines([]*pipelines.PipelineDummy{
+			// 	pipe,
+			// })
+		default:
+			_ = p.Signal.conn.WriteJSON(ErrUnsupportedTrackCodec)
+			_ = p.Close(ErrUnsupportedTrackCodec)
+			return
+		}
+
+		// _ = p.trackContextPool.Add(tctx)
+
+		caps := t.Codec()
+		// NOTE: pipe must have use rtp pkt input but in bytes format
+		pipe, _ := p.pipeAllocContext.Allocate(&AllocateParams{
+			TrackID:   tctx.ID(),
+			PipeName:  RTP_VP8_DUMMY,
+			MimeType:  caps.MimeType,
+			ClockRate: caps.ClockRate,
+		})
+		pipe.Start()
+
+		TrackContextRegistry.Add(tctx)
+		defer TrackContextRegistry.Remove(tctx)
+
+		// track.OnSample(func(sample *media.Sample) {
+		// 	// pipe.Sink(sample.Data, sample.Timestamp, sample.Duration)
+		// })
 
 		for {
 			select {
@@ -69,68 +110,110 @@ func (p *PeerContext) OnTrack(pool *PeerContextPool) {
 				continue
 			}
 
-			executils.ParallelExec(pool.Get(), threshold, step, func(peer *PeerContext) {
-				select {
-				case <-peer.ctx.Done():
-					return
-				default:
-				}
+			pktBytes, err := pkt.Marshal()
+			if err != nil {
+				continue
+			}
 
-				var track trackWritable
-				var exist bool
-				var err error
+			pipe.Sink(pktBytes, time.Time{}, -1)
+			// pkt.Timestamp
 
-				switch {
-				case p.PeerID == peer.PeerID:
-					track, exist = peer.Subscriber.HasLoopbackTrack(t.ID())
-					if !exist {
-						log.Println("Create loopback track")
-						track, err = peer.Subscriber.LoopbackTrack(t, recv)
-						track.OnFeedback(func(pkts []rtcp.Packet) {
-							if err := peer.peerConnection.WriteRTCP(pkts); err != nil {
-								log.Printf("transport-cc ERROR | %s", err)
-							}
-						})
-						track.OnCloseAsync(func() {
-							_ = peer.Signal.DispatchOffer()
-						})
-					}
-
-				default:
-					track, exist = peer.Subscriber.HasTrack(t.ID())
-					if !exist {
-						log.Println("Create local track track")
-						track, err = peer.Subscriber.Track(t, recv)
-						track.OnFeedback(func(pkts []rtcp.Packet) {
-							if err := peer.peerConnection.WriteRTCP(pkts); err != nil {
-								log.Printf("transport-cc ERROR | %s", err)
-							}
-						})
-						track.OnCloseAsync(func() {
-							_ = peer.Signal.DispatchOffer()
-						})
-					}
-				}
-
-				if err == nil && !exist {
-					go peer.Signal.DispatchOffer()
-				}
-
-				if track == nil {
-					return
-				}
-
-				go func() {
-					data, _ := pkt.Marshal()
-					pipe.Write(data)
-				}()
-
-				// WriteRTP takes about 50µs
-				track.WriteRTP(pkt)
-			})
+			// pipe.Sink(pkt, timestamp time.Time, duration time.Duration)
+			// _ = track.WriteRTP(pkt)
 		}
 	})
 }
+
+// func (p *PeerContext) OnTrack(pool *PeerContextPool) {
+// 	p.peerConnection.OnTrack(func(t *webrtc.TrackRemote, recv *webrtc.RTPReceiver) {
+// 		// pipe, err := p.pipeAllocContext.Allocate(pipelines.RTP_VP8_BASE)
+// 		// log.Println(pipe, err)
+// 		// _ = err
+// 		// pipe.Start()
+// 		// pipe.Close()
+//
+// 		defer func() {
+// 			for _, peer := range pool.Get() {
+// 				_ = peer.Subscriber.DeleteTrack(t.ID())
+// 			}
+// 		}()
+// 		log.Println("On track", t.ID())
+//
+// 		var threshold uint64 = 1000000
+// 		var step uint64 = 2
+//
+// 		for {
+// 			select {
+// 			case <-p.ctx.Done():
+// 				return
+// 			default:
+// 			}
+//
+// 			pkt, _, err := t.ReadRTP()
+// 			if err != nil {
+// 				if errors.Is(err, io.EOF) {
+// 					return
+// 				}
+// 				continue
+// 			}
+//
+// 			executils.ParallelExec(pool.Get(), threshold, step, func(peer *PeerContext) {
+// 				select {
+// 				case <-peer.ctx.Done():
+// 					return
+// 				default:
+// 				}
+//
+// 				var track trackWritable
+// 				var exist bool
+// 				var err error
+//
+// 				switch {
+// 				case p.PeerID == peer.PeerID:
+// 					track, exist = peer.Subscriber.HasLoopbackTrack(t.ID())
+// 					if !exist {
+// 						log.Println("Create loopback track")
+// 						track, err = peer.Subscriber.LoopbackTrack(t, recv)
+// 						track.OnFeedback(func(pkts []rtcp.Packet) {
+// 							if err = peer.peerConnection.WriteRTCP(pkts); err != nil {
+// 								log.Printf("transport-cc ERROR | %s", err)
+// 							}
+// 						})
+// 						track.OnCloseAsync(func() {
+// 							_ = peer.Signal.DispatchOffer()
+// 						})
+// 					}
+//
+// 				default:
+// 					track, exist = peer.Subscriber.HasTrack(t.ID())
+// 					if !exist {
+// 						log.Println("Create local track track")
+// 						track, err = peer.Subscriber.Track(t, recv)
+// 						track.OnFeedback(func(pkts []rtcp.Packet) {
+// 							if err = peer.peerConnection.WriteRTCP(pkts); err != nil {
+// 								log.Printf("transport-cc ERROR | %s", err)
+// 							}
+// 						})
+// 						track.OnCloseAsync(func() {
+// 							_ = peer.Signal.DispatchOffer()
+// 						})
+// 					}
+// 				}
+//
+// 				if err == nil && !exist {
+// 					go peer.Signal.DispatchOffer()
+// 				}
+//
+// 				if track == nil {
+// 					return
+// 				}
+//
+// 				// WriteRTP takes about 50µs
+// 				track.WriteRTP(pkt)
+// 			})
+// 		}
+// 	})
+// }
 
 func (p *PeerContext) CreateDataChannel(label string, options *webrtc.DataChannelInit) (*webrtc.DataChannel, error) {
 	return p.peerConnection.CreateDataChannel(label, options)
@@ -206,10 +289,10 @@ func (p *PeerContext) newSubscriber() {
 	subscriber := &Subscriber{
 		peerId:         p.PeerID,
 		peerConnection: p.peerConnection,
-		loopback:       make(map[string]*LoopbackTrackContext),
-		tracks:         make(map[string]*TrackContext),
-		ctx:            c,
-		cancel:         cancel,
+		// loopback:       make(map[string]*LoopbackTrackContext),
+		tracks: make(map[string]*TrackContext),
+		ctx:    c,
+		cancel: cancel,
 	}
 	p.Subscriber = subscriber
 }
@@ -234,7 +317,7 @@ type NewPeerContextParams struct {
 	Context          context.Context
 	WS               WebsocketWriter
 	API              *webrtc.API
-	PipeAllocContext *pipelines.AllocatorsContext
+	PipeAllocContext *AllocatorsContext
 }
 
 func NewPeerContext(params NewPeerContextParams) (*PeerContext, error) {

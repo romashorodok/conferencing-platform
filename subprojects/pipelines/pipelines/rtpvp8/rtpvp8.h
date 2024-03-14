@@ -14,20 +14,23 @@ inline void gst_element_deinit(GstElement *elem) {
 
 class BasePipeline {
 public:
-  BasePipeline(const char *name);
+  BasePipeline(char *trackID);
   virtual ~BasePipeline();
 
   inline GstElement *getPipeline() const { return pipeline; }
   inline GstElement *getAppsrc() const { return appsrc; }
+  inline char *getTrackID() const { return trackID; }
 
 private:
+  char *trackID;
+
   GstElement *pipeline;
   GstElement *appsrc;
 };
 
 class RtpVP8 : public BasePipeline {
 public:
-  RtpVP8(const char *name);
+  RtpVP8(char *trackID);
   ~RtpVP8();
 
 private:
@@ -44,12 +47,13 @@ private:
 };
 
 #endif
-extern void CGO_onSampleBuffer(void *buffer, int size, int duration);
+extern void CGO_rtp_vp8_dummy_sample(char *trackID, void *buffer, int size,
+                                     int duration);
 
 void write_pipe(void *pipe, void *buffer, int len);
 void start_pipe(void *pipe);
 void delete_pipe(void *pipe);
-void *new_pipe_rtp_vp8(const char *name);
+void *new_pipe_rtp_vp8(char *track);
 #ifdef __cplusplus
 }
 #endif

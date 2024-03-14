@@ -5,8 +5,9 @@
 
 #include "rtpvp8.h"
 
-BasePipeline::BasePipeline(const char *name) {
-  this->pipeline = gst_pipeline_new(name);
+BasePipeline::BasePipeline(char *trackID) {
+  this->trackID = trackID;
+  this->pipeline = gst_pipeline_new(nullptr);
   this->appsrc = gst_element_factory_make("appsrc", nullptr);
 }
 
@@ -16,10 +17,16 @@ BasePipeline::~BasePipeline() {
   gst_element_deinit(this->appsrc);
 }
 
-GstFlowReturn on_sample_vp8_pipeline(GstAppSink *sink, gpointer data) {
+GstFlowReturn on_sample_vp8_pipeline(GstAppSink *sink, gpointer pipeRaw) {
   GstSample *sample = gst_app_sink_pull_sample(sink);
+  auto pipe = static_cast<RtpVP8 *>(pipeRaw);
+
+  // std::cout << pipe->getTrackID() << std::endl;
+  // std::cout << pipe->getTrackPool() << std::endl;
+
+  // std::cout << trackID << std::endl;
   // std::cout << "test1  test" << std::endl;
-  std::cout << "--test1" << std::endl;
+  // std::cout << "--test1" << std::endl;
   if (sample) {
     // Get sample details
     // GstCaps *caps = gst_sample_get_caps(sample);
@@ -42,7 +49,8 @@ GstFlowReturn on_sample_vp8_pipeline(GstAppSink *sink, gpointer data) {
       gst_buffer_extract_dup(buffer, 0, gst_buffer_get_size(buffer), &copy,
                              &copy_size);
 
-      CGO_onSampleBuffer(copy, copy_size, buffer->duration);
+      CGO_rtp_vp8_dummy_sample(pipe->getTrackID(), copy, copy_size,
+                               buffer->duration);
     }
 
     gst_sample_unref(sample);
@@ -51,7 +59,7 @@ GstFlowReturn on_sample_vp8_pipeline(GstAppSink *sink, gpointer data) {
   return GST_FLOW_OK;
 }
 
-RtpVP8::RtpVP8(const char *name) : BasePipeline(name) {
+RtpVP8::RtpVP8(char *trackID) : BasePipeline(trackID) {
   auto appsrc = this->getAppsrc();
   g_object_set(appsrc, "format", GST_FORMAT_TIME, "is-live", TRUE, nullptr);
   g_object_set(appsrc, "do-timestamp", TRUE, nullptr);
@@ -128,7 +136,7 @@ RtpVP8::RtpVP8(const char *name) : BasePipeline(name) {
 
   GstAppSinkCallbacks callbacks = {NULL, NULL, on_sample_vp8_pipeline, NULL};
   gst_app_sink_set_callbacks(GST_APP_SINK(this->cgoOnSampleSink), &callbacks,
-                             NULL, NULL);
+                             this, NULL);
 }
 
 RtpVP8::~RtpVP8() {
@@ -180,4 +188,4 @@ extern "C" void delete_pipe(void *pipe) {
   delete _pipe;
 }
 
-extern "C" void *new_pipe_rtp_vp8(const char *name) { return new RtpVP8(name); }
+extern "C" void *new_pipe_rtp_vp8(char *trackID) { return new RtpVP8(trackID); }

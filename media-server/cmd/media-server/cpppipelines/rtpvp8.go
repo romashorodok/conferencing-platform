@@ -7,15 +7,23 @@ package cpppipelines
 import "C"
 
 import (
+	"log"
+	"time"
 	"unsafe"
 
-	"github.com/google/uuid"
-	"github.com/romashorodok/conferencing-platform/media-server/pkg/pipelines"
+	"github.com/pion/webrtc/v3/pkg/media"
+	"github.com/romashorodok/conferencing-platform/media-server/pkg/sfu"
 )
 
 type RtpVP8 struct {
 	pipeline unsafe.Pointer
-	id       string
+	trackID  unsafe.Pointer
+}
+
+// Sink implements pipelines.Pipeline.
+func (p *RtpVP8) Sink(frame []byte, timestamp time.Time, duration time.Duration) error {
+	C.write_pipe(p.pipeline, C.CBytes(frame), C.int(len(frame)))
+	return nil
 }
 
 func (p *RtpVP8) Start() {
@@ -27,22 +35,35 @@ func (p *RtpVP8) Close() {
 	C.free(p.pipeline)
 }
 
-func (p *RtpVP8) Write(data []byte) {
-	C.write_pipe(p.pipeline, C.CBytes(data), C.int(len(data)))
+var _ sfu.Pipeline = (*RtpVP8)(nil)
+
+//export CGO_rtp_vp8_dummy_sample
+func CGO_rtp_vp8_dummy_sample(trackID *C.char, buffer unsafe.Pointer, size C.int, duration C.int) {
+	track := sfu.TrackContextRegistry.GetByID(C.GoString(trackID))
+	if track == nil {
+		log.Printf("Drop sample for track: %s", C.GoString(trackID))
+		return
+	}
+
+	track.WriteSample(media.Sample{
+		Data: C.GoBytes(buffer, size),
+		// NOTE: Relying on a hardcoded duration could lead to the unexpected behavior.
+		// But actually it's better than pion handle samples.
+		Duration: time.Millisecond,
+	})
+
+	C.free(buffer)
 }
 
-var _ pipelines.Pipeline = (*RtpVP8)(nil)
+func NewRtpVP8(trackID string, mimeType string, clockRate uint32) sfu.Pipeline {
+	tID := C.CString(trackID)
 
-func NewRtpVP8() pipelines.Pipeline {
-	id := uuid.NewString()
-
-	cID := C.CString(id)
-	defer C.free(unsafe.Pointer(cID))
-
-	pipeline := C.new_pipe_rtp_vp8(cID)
+	// TODO: instead of extern make func callback
+	// TODO: check if it's possible, because I cannot use go pointers with c pointers
+	pipeline := C.new_pipe_rtp_vp8(tID)
 
 	return &RtpVP8{
 		pipeline: pipeline,
-		id:       id,
+		trackID:  unsafe.Pointer(tID),
 	}
 }

@@ -13,7 +13,6 @@ import (
 	"github.com/gorilla/websocket"
 	echo "github.com/labstack/echo/v4"
 	webrtc "github.com/pion/webrtc/v3"
-	"github.com/romashorodok/conferencing-platform/media-server/pkg/pipelines"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/protocol"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/rtpstats"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/sfu"
@@ -46,7 +45,7 @@ type roomController struct {
 	logger           *slog.Logger
 	peerConnectionMu sync.Mutex
 	roomNotifier     *RoomNotifier
-	pipeAllocContext *pipelines.AllocatorsContext
+	pipeAllocContext *sfu.AllocatorsContext
 }
 
 func (ctrl *roomController) RoomControllerRoomNotifier(ctx echo.Context) error {
@@ -259,7 +258,7 @@ type newRoomController_Params struct {
 	Logger           *slog.Logger
 	Stats            chan *rtpstats.RtpStats
 	RoomNotifier     *RoomNotifier
-	PipeAllocContext *pipelines.AllocatorsContext
+	PipeAllocContext *sfu.AllocatorsContext
 }
 
 func NewRoomController(params newRoomController_Params) *roomController {
