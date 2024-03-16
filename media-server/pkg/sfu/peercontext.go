@@ -63,6 +63,7 @@ func (p *PeerContext) OnTrack(peerContextPool *PeerContextPool) {
 		// var track trackSampleWritable
 		switch t.Codec().MimeType {
 		case webrtc.MimeTypeOpus:
+			time.Sleep(time.Hour)
 			// track = NewTrackContextOpus(tctx)
 		case webrtc.MimeTypeVP8:
 			// track = NewTrackContextVp8(tctx)

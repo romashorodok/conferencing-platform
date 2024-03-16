@@ -17,3 +17,5 @@ subprojects/gvdb.wrap
 subprojects/vpx
 subprojects/libffi.wrap
 subprojects/vpx.wrap
+subprojects/opencv
+build

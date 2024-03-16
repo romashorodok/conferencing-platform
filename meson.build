@@ -5,6 +5,15 @@ project('media-server', 'c', 'cpp',
   version: '0.0.0',
   )
 
+# cmake = import('cmake')
+# opt_var = cmake.subproject_options()
+# opt_var.add_cmake_defines({
+#   'WITH_OPENCL': false,
+#   'ENABLE_PRECOMPILED_HEADERS': false,
+#   })
+# opencv4 = cmake.subproject('opencv',options: opt_var )
+# opencv4 = dependency('opencv')
+
 cc = meson.get_compiler('c')
 std = cc.find_library('stdc++', required: true)
 
@@ -15,13 +24,13 @@ pipeline_lib = pipelines_proj.get_variable('pipelines_lib')
 go = find_program('go')
 
 cmd_path = join_paths(meson.current_source_dir(), 'media-server/cmd/media-server')
-pkg_config_path = join_paths(meson.current_build_dir(), 'meson-uninstalled')
+# pkg_config_path = join_paths(meson.current_build_dir(), 'meson-uninstalled')
 
-pkg_config_path = join_paths(meson.current_build_dir(), 'meson-uninstalled')
+pkg_config_path = '@0@:@1@'.format(join_paths(meson.current_build_dir(), 'meson-uninstalled'),'/usr/local/Cellar/opencv/4.9.0_5/lib/pkgconfig')
 
 uninstalled_env = environment()
 uninstalled_env.set('PKG_CONFIG_PATH', pkg_config_path)
-uninstalled_deps = 'pipelines-1.0 rtpvp8-1.0'
+uninstalled_deps = 'pipelines-1.0 rtpvp8-1.0 opencv4'
 
 r = run_command('pkg-config', '--cflags', uninstalled_deps, check: true, env: uninstalled_env)
 pkg_config_cflags = r.stdout().strip()
@@ -48,7 +57,7 @@ go_mod = custom_target('golang',
   env: goenv,
   depends: [rtpvp8_lib, pipeline_lib],
   command: [go, 'build', 
-    # '-a',
+    '-a',
     '-o', '@OUTPUT@', cmd_path],
   install: true,
   install_dir: '',
