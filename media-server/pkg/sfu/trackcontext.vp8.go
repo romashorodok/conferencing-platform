@@ -22,7 +22,7 @@ type TrackContextVp8 struct {
 // }
 
 func NewTrackContextVp8(t *TrackContext) *TrackContextVp8 {
-	sample := samplebuilder.New(10, &codecs.VP8Packet{}, t.track.Codec().ClockRate)
+	sample := samplebuilder.New(10, &codecs.VP8Packet{}, t.sample.Codec().ClockRate)
 
 	return &TrackContextVp8{
 		TrackContext: t,

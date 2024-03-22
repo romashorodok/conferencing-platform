@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"os"
 	"time"
 
 	"github.com/pion/rtp"
@@ -23,7 +24,6 @@ type TrackMediaEngine interface {
 	TrackWriterRTP
 	TrackRemoteWriterSample
 	SetPipeline(pipe Pipeline) error
-	GetLocalTrack() webrtc.TrackLocal
 }
 
 var ErrUnsupportedCaps = errors.New("")
@@ -44,10 +44,6 @@ func (t *TrackMediaEngineRtp) WriteRemote(sample media.Sample) error {
 	return errors.Join(ErrUnsupportedCaps, errors.New("unable write into rtp. Use WriteRTP instead"))
 }
 
-func (t *TrackMediaEngineRtp) GetLocalTrack() webrtc.TrackLocal {
-	return t.rtp
-}
-
 var _ TrackMediaEngine = (*TrackMediaEngineRtp)(nil)
 
 func NewTrackMediaEngineRtp(rtp *webrtc.TrackLocalStaticRTP) *TrackMediaEngineRtp {
@@ -61,6 +57,7 @@ type TrackMediaEngineSample struct {
 	pipe   Pipeline
 }
 
+// SetPipeline implements TrackMediaEngine.
 func (t *TrackMediaEngineSample) SetPipeline(pipe Pipeline) error {
 	t.pipe = pipe
 	return nil
@@ -71,15 +68,12 @@ func (t *TrackMediaEngineSample) WriteRTP(pkt *rtp.Packet) error {
 	if err != nil {
 		return err
 	}
+
 	return t.pipe.Sink(pktBytes, time.Time{}, -1)
 }
 
 func (t *TrackMediaEngineSample) WriteRemote(sample media.Sample) error {
 	return t.sample.WriteSample(sample)
-}
-
-func (t *TrackMediaEngineSample) GetLocalTrack() webrtc.TrackLocal {
-	return t.sample
 }
 
 var _ TrackMediaEngine = (*TrackMediaEngineSample)(nil)
@@ -97,9 +91,8 @@ type TrackContext struct {
 	rtp    *webrtc.TrackLocalStaticRTP
 	sample *webrtc.TrackLocalStaticSample
 
-	sender           *webrtc.RTPSender
-	filter           *Filter
-	pipeAllocContext *AllocatorsContext
+	sender *webrtc.RTPSender
+	filter *Filter
 
 	// pipes     []Pipeline
 	// sampleBus chan *media.Sample
@@ -200,78 +193,28 @@ func (t *TrackContext) ID() string {
 }
 
 func (t *TrackContext) SetFilter(filter *Filter) error {
-	// if t.rtp.Kind() != t.sample.Kind() {
-	// 	log.Panicf("different track mime type on context. RTP: %s SAMPLE: %s", t.rtp.Kind(), t.sample.Kind())
-	// 	os.Exit(-1)
-	// }
+	if t.rtp.Kind() != t.sample.Kind() {
+		log.Panicf("different track mime type on context. RTP: %s SAMPLE: %s", t.rtp.Kind(), t.sample.Kind())
+		os.Exit(-1)
+	}
 
 	if t.rtp.Kind() != t.sender.Track().Kind() {
 		return errors.New("not allowed replace mime type of the track. Create a new one instead")
 	}
 
-	var found bool
 	switch kind := t.rtp.Kind(); kind {
 	case webrtc.RTPCodecTypeAudio:
-		for _, mimeType := range filter.MimeTypes {
+		for _, mimeType := range filter.MimeType {
 			if kind.String() == mimeType.String() {
-				found = true
 				break
 			}
 		}
-		if !found {
-			return errors.New("unable switch track. Not found filter mime type")
-		}
-
+		return errors.New("unable switch track. Not found filter mime type")
 	case webrtc.RTPCodecTypeVideo:
-		for _, mimeType := range filter.MimeTypes {
-			if kind.String() == mimeType.String() {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return errors.New("unable switch track. Not found filter mime type")
-		}
 
 	default:
 		return errors.New("filter mime type mismatch")
 	}
-
-	var media TrackMediaEngine
-	switch filter {
-	case FILTER_NONE:
-		media = NewTrackMediaEngineRtp(t.rtp)
-	case FILTER_RTP_VP8_DUMMY:
-		media = NewTrackMediaEngineSample(t.sample)
-
-		caps := t.sample.Codec()
-		log.Printf("%+v", t.pipeAllocContext)
-		pipe, err := t.pipeAllocContext.Allocate(&AllocateParams{
-			TrackID:   t.ID(),
-			Filter:    FILTER_RTP_VP8_DUMMY,
-			MimeType:  caps.MimeType,
-			ClockRate: caps.ClockRate,
-		})
-        pipe.Start()
-
-		if err != nil {
-			return err
-		}
-		log.Printf("pipe: %+v", pipe)
-		_ = media.SetPipeline(pipe)
-
-	default:
-		media = NewTrackMediaEngineRtp(t.rtp)
-	}
-
-	if err := t.sender.ReplaceTrack(media.GetLocalTrack()); err != nil {
-		return err
-	}
-    log.Printf("replace track %+v", media)
-
-	t.filter = filter
-	t.media = media
-	return nil
 }
 
 func (t *TrackContext) Filter() *Filter {
@@ -282,10 +225,8 @@ type NewTrackContextParams struct {
 	ID          string
 	TrackSample *webrtc.TrackLocalStaticSample
 	TrackRtp    *webrtc.TrackLocalStaticRTP
-	// TODO: add alloc to filter
-	PipeAllocContext *AllocatorsContext
-	Sender           *webrtc.RTPSender
-	Filter           *Filter
+	Sender      *webrtc.RTPSender
+	Filter      *Filter
 }
 
 // TODO: creating of RTPSender must be here not on sub side
@@ -295,23 +236,16 @@ func NewTrackContext(ctx context.Context, params NewTrackContextParams) *TrackCo
 	}
 
 	c, cancel := context.WithCancelCause(ctx)
-	trackContext := &TrackContext{
+	return &TrackContext{
 		id:     params.ID,
 		rtp:    params.TrackRtp,
 		sample: params.TrackSample,
 		// track:  params.Track,
-		sender:           params.Sender,
-		pipeAllocContext: params.PipeAllocContext,
-		// filter: params.Filter,
+		sender: params.Sender,
+		filter: params.Filter,
 		ctx:    c,
 		cancel: cancel,
 		// pipes:     make([]*pipelines.PipelineDummy, 1),
 		// sampleBus: make(chan *media.Sample, 10),
 	}
-
-	if err := trackContext.SetFilter(params.Filter); err != nil {
-		log.Printf("TRACK | %s unable set filter", trackContext.id)
-	}
-
-	return trackContext
 }

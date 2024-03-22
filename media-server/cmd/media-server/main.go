@@ -35,7 +35,7 @@ func CreateTestRoom(params CreateTestRoom_Params) {
 
 func NewPipelinesAllocatorsContext() *sfu.AllocatorsContext {
 	allocContext := sfu.NewAllocatorsContext()
-	allocContext.Register(sfu.RTP_VP8_DUMMY, sfu.Allocator(cpppipelines.NewRtpVP8))
+	allocContext.Register(sfu.FILTER_RTP_VP8_DUMMY, sfu.Allocator(cpppipelines.NewRtpVP8))
 	return allocContext
 }
 

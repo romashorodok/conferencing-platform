@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"log/slog"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -46,6 +48,12 @@ type roomController struct {
 	peerConnectionMu sync.Mutex
 	roomNotifier     *RoomNotifier
 	pipeAllocContext *sfu.AllocatorsContext
+}
+
+type filterData struct {
+	Enabled  bool   `json:"enabled"`
+	Name     string `json:"name"`
+	MimeType string `json:"mimeType"`
 }
 
 func (ctrl *roomController) RoomControllerRoomNotifier(ctx echo.Context) error {
@@ -150,6 +158,32 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 		return ctrl.wsError(w, err)
 	}
 
+	go func() {
+	retry:
+		peerFilters := peerContext.Filters()
+
+		filtersBytes, err := json.Marshal(peerFilters)
+		if err != nil {
+			time.Sleep(time.Second)
+			goto retry
+		}
+
+		if err = w.WriteJSON(&websocketMessage{
+			Event: "filters",
+			Data:  string(filtersBytes),
+		}); err != nil {
+			select {
+			case <-peerContext.Done():
+				return
+			default:
+				time.Sleep(time.Second)
+				goto retry
+			}
+		}
+
+		log.Println("Send")
+	}()
+
 	message := &websocketMessage{}
 	for {
 		if err := w.ReadJSON(message); err != nil {
@@ -175,6 +209,27 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 			if err := peerContext.Signal.DispatchOffer(); err != nil {
 				return ctrl.wsError(w, err)
 			}
+
+		case "filter":
+			var fData filterData
+			if err := json.Unmarshal([]byte(message.Data), &fData); err != nil {
+				return ctrl.wsError(w, err)
+			}
+
+			if err := peerContext.SwitchFilter(fData.Name, fData.MimeType); err != nil {
+                log.Println(err)
+				return ctrl.wsError(w, err)
+			}
+
+			// filter, err := ctrl.pipeAllocContext.Filter(fData.Name)
+			// if err != nil {
+			// 	return ctrl.wsError(w, err)
+			// }
+			// log.Printf("%+v", filter)
+
+			// filter := ctrl.pipeAllocContext.Filter(name string)
+			// log.Println("filter message recv", message)
+
 		default:
 			return ctrl.wsError(w, errors.New("wrong message event"))
 		}

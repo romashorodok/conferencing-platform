@@ -152,7 +152,9 @@ export enum SignalEvent {
   Answer = "answer",
   // https://datatracker.ietf.org/doc/html/draft-ietf-mmusic-trickle-ice
   // TrickleIceCandidate = "trickle-ice-candidate"
-  TrickleIceCandidate = "candidate"
+  TrickleIceCandidate = "candidate",
+
+  Filters = "filters"
 }
 
 export class Signal extends EventEmitter {
@@ -202,11 +204,15 @@ export class Signal extends EventEmitter {
   }
 }
 
+export type Filter = { name: string, mimeType: string, enabled: boolean };
+type FilterMessage = { audio: Array<Filter>, video: Array<Filter> }
+
 export function useRoom() {
   const { mediaStream } = useContext(MediaStreamContext)
   const { peerContext, setPeerContext } = useContext(SubscriberContext)
   const { signal, setSignal } = useContext(SignalContext)
   const { roomMediaStreamList, setRoomMediaStream } = useContext(RoomMediaStreamListContext)
+  const [videoFilterList, setVideoFilterList] = useState<Array<Filter>>([])
 
   const sinkMediaStream = useCallback(() => {
     if (!mediaStream || !peerContext)
@@ -260,6 +266,16 @@ export function useRoom() {
     const peerContext = new RTCEngine()
 
     try {
+      signal.on(SignalEvent.Filters, (payload: string) => {
+        try {
+          const filterMessage: FilterMessage = JSON.parse(payload);
+          console.log("got filters", filterMessage);
+          setVideoFilterList(filterMessage.video)
+        } catch {
+          console.error("filters parsing error");
+        }
+      })
+
       signal.connect()
       await signal.onConnect.wait
 
@@ -305,7 +321,18 @@ export function useRoom() {
     }
   }, [])
 
-  return { join, roomMediaStreamList, sinkMediaStream }
+  const setVideoFilter = useCallback(async (filter: Filter) => {
+    if (!signal) return
+    await signal.onConnect.wait
+
+    signal.ws?.send(JSON.stringify({
+      event: "filter",
+      data: JSON.stringify(filter)
+    }))
+
+  }, [signal]);
+
+  return { join, roomMediaStreamList, sinkMediaStream, videoFilterList, setVideoFilter }
 }
 
 export function CameraComponent() {

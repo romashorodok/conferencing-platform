@@ -5,12 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"time"
+	"log"
 
 	"github.com/google/uuid"
-	"github.com/pion/rtp"
 	webrtc "github.com/pion/webrtc/v3"
-	"github.com/pion/webrtc/v3/pkg/media"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/protocol"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/rtpstats"
 )
@@ -19,24 +17,20 @@ type PeerContext struct {
 	ctx    context.Context
 	cancel context.CancelCauseFunc
 
-	PeerID           protocol.PeerID
-	webrtc           *webrtc.API
-	peerConnection   *webrtc.PeerConnection
-	stats            *rtpstats.RtpStats
-	Signal           *Signal
-	Subscriber       *Subscriber
-	pipeAllocContext *AllocatorsContext
+	PeerID            protocol.PeerID
+	webrtc            *webrtc.API
+	peerConnection    *webrtc.PeerConnection
+	stats             *rtpstats.RtpStats
+	Signal            *Signal
+	Subscriber        *Subscriber
+	videoTrackContext *TrackContext
+	audioTrackContext *TrackContext
+	pipeAllocContext  *AllocatorsContext
 }
 
 type trackWritable interface {
-	WriteRTP(p *rtp.Packet) error
-	OnSample(func(*media.Sample))
 	OnCloseAsync(func())
-}
-
-type trackSampleWritable interface {
-	trackWritable
-	WriteSample(*media.Sample) error
+	GetTrackWriterRTP() (TrackWriterRTP, error)
 }
 
 func (p *PeerContext) OnTrack(peerContextPool *PeerContextPool) {
@@ -47,7 +41,9 @@ func (p *PeerContext) OnTrack(peerContextPool *PeerContextPool) {
 		// 	}
 		// }()
 
-		tctx, err := p.Subscriber.Track(t, recv)
+		filter := FILTER_NONE
+
+		tctx, err := p.Subscriber.Track(t, recv, filter)
 		if err != nil {
 			err = errors.Join(err, ErrUnsupportedTrackCodec)
 			_ = p.Signal.conn.WriteJSON(err)
@@ -60,13 +56,15 @@ func (p *PeerContext) OnTrack(peerContextPool *PeerContextPool) {
 		}()
 		p.Signal.DispatchOffer()
 
-		// var track trackSampleWritable
+		var track trackWritable
 		switch t.Codec().MimeType {
 		case webrtc.MimeTypeOpus:
-			time.Sleep(time.Hour)
-			// track = NewTrackContextOpus(tctx)
+			// time.Sleep(time.Hour)
+			p.audioTrackContext = tctx
+			track = NewTrackContextOpus(tctx)
 		case webrtc.MimeTypeVP8:
-			// track = NewTrackContextVp8(tctx)
+			p.videoTrackContext = tctx
+			track = NewTrackContextVp8(tctx)
 			// pipe := pipelines.NewPipelineDummy(t.Codec().RTPCodecCapability)
 			// _ = tctx.SetPipelines([]*pipelines.PipelineDummy{
 			// 	pipe,
@@ -79,17 +77,18 @@ func (p *PeerContext) OnTrack(peerContextPool *PeerContextPool) {
 
 		// _ = p.trackContextPool.Add(tctx)
 
-		caps := t.Codec()
+		// caps := t.Codec()
 		// NOTE: pipe must have use rtp pkt input but in bytes format
-		pipe, _ := p.pipeAllocContext.Allocate(&AllocateParams{
-			TrackID:   tctx.ID(),
-			PipeName:  RTP_VP8_DUMMY,
-			MimeType:  caps.MimeType,
-			ClockRate: caps.ClockRate,
-		})
-		pipe.Start()
+		// pipe, _ := p.pipeAllocContext.Allocate(&AllocateParams{
+		// 	TrackID:   tctx.ID(),
+		// 	Filter:    *FILTER_RTP_VP8_DUMMY,
+		// 	MimeType:  caps.MimeType,
+		// 	ClockRate: caps.ClockRate,
+		// })
+		// pipe.Start()
+		// pipe.
 
-		TrackContextRegistry.Add(tctx)
+		_ = TrackContextRegistry.Add(tctx)
 		defer TrackContextRegistry.Remove(tctx)
 
 		// track.OnSample(func(sample *media.Sample) {
@@ -111,18 +110,109 @@ func (p *PeerContext) OnTrack(peerContextPool *PeerContextPool) {
 				continue
 			}
 
-			pktBytes, err := pkt.Marshal()
+			// pktBytes, err := pkt.Marshal()
+			// if err != nil {
+			// 	continue
+			// }
+
+			// pipe.Sink(pktBytes, time.Time{}, -1)
+			// pkt.Timestamp
+
+			// _ = track.WriteRTP(pkt)
+
+			writer, err := track.GetTrackWriterRTP()
 			if err != nil {
+				log.Println("unable get rtp writer. Err:", err)
 				continue
 			}
 
-			pipe.Sink(pktBytes, time.Time{}, -1)
-			// pkt.Timestamp
-
-			// pipe.Sink(pkt, timestamp time.Time, duration time.Duration)
-			// _ = track.WriteRTP(pkt)
+			err = writer.WriteRTP(pkt)
+            if err != nil {
+                log.Println("unable write rtp pkt. Err:", err)
+                continue
+            }
 		}
 	})
+}
+
+func (p *PeerContext) GetVideoTrackContext() *TrackContext {
+	return p.videoTrackContext
+}
+
+func (p *PeerContext) GetAudioTrackContext() *TrackContext {
+	return p.audioTrackContext
+}
+
+func (p *PeerContext) SwitchFilter(filterName string, mimeTypeName string) error {
+	filter, err := p.pipeAllocContext.Filter(filterName)
+	if err != nil {
+		return err
+	}
+
+	var mimeType MimeType
+	for _, mime := range filter.MimeTypes {
+		if mimeTypeName == mime.String() {
+			mimeType = mime
+		}
+	}
+	if mimeType.String() == "" {
+		return errors.New("unknown mime type")
+	}
+
+	var track *TrackContext
+	switch mimeType {
+	case MIME_TYPE_VIDEO:
+		track = p.GetVideoTrackContext()
+	case MIME_TYPE_AUDIO:
+		track = p.GetAudioTrackContext()
+	default:
+		return errors.New("unknown mime type")
+	}
+
+	return track.SetFilter(filter)
+}
+
+type filterPayload struct {
+	Name     string `json:"name"`
+	MimeType string `json:"mimeType"`
+	Enabled  bool   `json:"enabled"`
+}
+type filtersResult struct {
+	Audio []filterPayload `json:"audio"`
+	Video []filterPayload `json:"video"`
+}
+
+func (p *PeerContext) Filters() *filtersResult {
+	availableFilters := p.pipeAllocContext.Filters()
+
+	var audioFilters []filterPayload
+	var videoFilters []filterPayload
+
+	for _, filter := range availableFilters {
+		for _, mimeType := range filter.MimeTypes {
+			switch t := mimeType; t {
+			case MIME_TYPE_VIDEO:
+				videoFilters = append(videoFilters, filterPayload{
+					Name:     filter.GetName(),
+					MimeType: t.String(),
+					Enabled:  false,
+				})
+			case MIME_TYPE_AUDIO:
+				audioFilters = append(audioFilters, filterPayload{
+					Name:     filter.GetName(),
+					MimeType: t.String(),
+					Enabled:  false,
+				})
+			default:
+				continue
+			}
+		}
+	}
+
+	return &filtersResult{
+		Audio: audioFilters,
+		Video: videoFilters,
+	}
 }
 
 // func (p *PeerContext) OnTrack(pool *PeerContextPool) {
@@ -288,8 +378,9 @@ func (p *PeerContext) SetStats(stats *rtpstats.RtpStats) {
 func (p *PeerContext) newSubscriber() {
 	c, cancel := context.WithCancelCause(p.ctx)
 	subscriber := &Subscriber{
-		peerId:         p.PeerID,
-		peerConnection: p.peerConnection,
+		peerId:           p.PeerID,
+		peerConnection:   p.peerConnection,
+		pipeAllocContext: p.pipeAllocContext,
 		// loopback:       make(map[string]*LoopbackTrackContext),
 		tracks: make(map[string]*TrackContext),
 		ctx:    c,

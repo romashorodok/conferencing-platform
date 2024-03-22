@@ -22,7 +22,7 @@ type TrackContextOpus struct {
 // }
 
 func NewTrackContextOpus(t *TrackContext) *TrackContextOpus {
-	sample := samplebuilder.New(11, &codecs.OpusPacket{}, t.track.Codec().ClockRate)
+	sample := samplebuilder.New(11, &codecs.OpusPacket{}, t.sample.Codec().ClockRate)
 	return &TrackContextOpus{
 		TrackContext: t,
 		sample:       sample,

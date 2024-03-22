@@ -16,39 +16,50 @@ type Subscriber struct {
 	sid string
 
 	// loopback map[string]*LoopbackTrackContext
-	tracks   map[string]*TrackContext
-	tracksMu sync.Mutex
+	tracks           map[string]*TrackContext
+	tracksMu         sync.Mutex
+	pipeAllocContext *AllocatorsContext
 
 	ctx    context.Context
 	cancel context.CancelCauseFunc
 }
 
-func (s *Subscriber) Track(t *webrtc.TrackRemote, recv *webrtc.RTPReceiver) (*TrackContext, error) {
+// Create track context with default RTP sender
+func (s *Subscriber) Track(t *webrtc.TrackRemote, recv *webrtc.RTPReceiver, filter *Filter) (*TrackContext, error) {
 	s.tracksMu.Lock()
 	defer s.tracksMu.Unlock()
 
-	if track, exist := s.tracks[t.ID()]; exist {
+	id := t.ID()
+
+	if track, exist := s.tracks[id]; exist {
 		if track != nil {
 			return track, nil
 		}
 	}
 
 	// NOTE: Track may have same id, but it may have different layerID(RID)
-	// track, err := webrtc.NewTrackLocalStaticRTP(t.Codec().RTPCodecCapability, t.ID(), t.StreamID())
-	// if err != nil {
-	// 	log.Println("unable create track for subscriber. track", err)
-	// 	return nil, err
-	// }
-
-	track, err := webrtc.NewTrackLocalStaticSample(t.Codec().RTPCodecCapability, t.ID(), t.StreamID())
+	trackRtp, err := webrtc.NewTrackLocalStaticRTP(t.Codec().RTPCodecCapability, id, t.StreamID())
 	if err != nil {
-		log.Println("unable create track sample")
+		log.Println("unable create track for rtp.", err)
 		return nil, err
-
 	}
-	sender, err := s.peerConnection.AddTrack(track)
+
+	trackSample, err := webrtc.NewTrackLocalStaticSample(t.Codec().RTPCodecCapability, id, t.StreamID())
 	if err != nil {
-		log.Println("uanble add track to the subscriber. sender", err)
+		log.Println("unable create track sample.")
+		return nil, err
+	}
+
+	var sender *webrtc.RTPSender
+	err = nil
+	switch filter {
+	case FILTER_NONE:
+		sender, err = s.peerConnection.AddTrack(trackRtp)
+	default:
+		sender, err = s.peerConnection.AddTrack(trackSample)
+	}
+	if err != nil {
+		log.Println("unable add track to the subscriber", err)
 		return nil, err
 	}
 
@@ -73,7 +84,12 @@ func (s *Subscriber) Track(t *webrtc.TrackRemote, recv *webrtc.RTPReceiver) (*Tr
 	// }
 
 	trackContext := NewTrackContext(s.ctx, NewTrackContextParams{
-		Track:  track,
+		ID:               id,
+		TrackRtp:         trackRtp,
+		TrackSample:      trackSample,
+		Filter:           filter,
+		PipeAllocContext: s.pipeAllocContext,
+		// Track:  track,
 		Sender: sender,
 		// TWCC_EXT: twccExt,
 		// SSRC:     uint32(t.SSRC()),
