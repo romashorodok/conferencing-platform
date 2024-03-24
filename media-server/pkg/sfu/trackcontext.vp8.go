@@ -1,7 +1,6 @@
 package sfu
 
 import (
-	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v3/pkg/media/samplebuilder"
 )
 
@@ -22,10 +21,10 @@ type TrackContextVp8 struct {
 // }
 
 func NewTrackContextVp8(t *TrackContext) *TrackContextVp8 {
-	sample := samplebuilder.New(10, &codecs.VP8Packet{}, t.sample.Codec().ClockRate)
+	// sample := samplebuilder.New(10, &codecs.VP8Packet{}, t.sample.Codec().ClockRate)
 
 	return &TrackContextVp8{
 		TrackContext: t,
-		sample:       sample,
+		// sample:       sample,
 	}
 }

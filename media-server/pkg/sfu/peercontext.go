@@ -122,15 +122,15 @@ func (p *PeerContext) OnTrack(peerContextPool *PeerContextPool) {
 
 			writer, err := track.GetTrackWriterRTP()
 			if err != nil {
-				log.Println("unable get rtp writer. Err:", err)
+				// log.Println("unable get rtp writer. Err:", err)
 				continue
 			}
 
 			err = writer.WriteRTP(pkt)
-            if err != nil {
-                log.Println("unable write rtp pkt. Err:", err)
-                continue
-            }
+			if err != nil {
+				log.Println("unable write rtp pkt. Err:", err)
+				continue
+			}
 		}
 	})
 }
@@ -169,7 +169,15 @@ func (p *PeerContext) SwitchFilter(filterName string, mimeTypeName string) error
 		return errors.New("unknown mime type")
 	}
 
-	return track.SetFilter(filter)
+	err = track.SetFilter(filter)
+	if err != nil {
+        log.Println("filter err", err)
+		return err
+	}
+
+	p.Signal.DispatchOffer()
+
+	return nil
 }
 
 type filterPayload struct {
@@ -378,6 +386,7 @@ func (p *PeerContext) SetStats(stats *rtpstats.RtpStats) {
 func (p *PeerContext) newSubscriber() {
 	c, cancel := context.WithCancelCause(p.ctx)
 	subscriber := &Subscriber{
+		webrtc:           p.webrtc,
 		peerId:           p.PeerID,
 		peerConnection:   p.peerConnection,
 		pipeAllocContext: p.pipeAllocContext,

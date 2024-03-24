@@ -3,13 +3,13 @@ package sfu
 import (
 	"context"
 	"errors"
-	"log"
 	"sync"
 
 	webrtc "github.com/pion/webrtc/v3"
 )
 
 type Subscriber struct {
+	webrtc         *webrtc.API
 	peerConnection *webrtc.PeerConnection
 	peerId         string
 
@@ -38,30 +38,30 @@ func (s *Subscriber) Track(t *webrtc.TrackRemote, recv *webrtc.RTPReceiver, filt
 	}
 
 	// NOTE: Track may have same id, but it may have different layerID(RID)
-	trackRtp, err := webrtc.NewTrackLocalStaticRTP(t.Codec().RTPCodecCapability, id, t.StreamID())
-	if err != nil {
-		log.Println("unable create track for rtp.", err)
-		return nil, err
-	}
+	// trackRtp, err := webrtc.NewTrackLocalStaticRTP(t.Codec().RTPCodecCapability, id, t.StreamID())
+	// if err != nil {
+	// 	log.Println("unable create track for rtp.", err)
+	// 	return nil, err
+	// }
+	//
+	// trackSample, err := webrtc.NewTrackLocalStaticSample(t.Codec().RTPCodecCapability, id, t.StreamID())
+	// if err != nil {
+	// 	log.Println("unable create track sample.")
+	// 	return nil, err
+	// }
 
-	trackSample, err := webrtc.NewTrackLocalStaticSample(t.Codec().RTPCodecCapability, id, t.StreamID())
-	if err != nil {
-		log.Println("unable create track sample.")
-		return nil, err
-	}
-
-	var sender *webrtc.RTPSender
-	err = nil
-	switch filter {
-	case FILTER_NONE:
-		sender, err = s.peerConnection.AddTrack(trackRtp)
-	default:
-		sender, err = s.peerConnection.AddTrack(trackSample)
-	}
-	if err != nil {
-		log.Println("unable add track to the subscriber", err)
-		return nil, err
-	}
+	// var sender *webrtc.RTPSender
+	// err = nil
+	// switch filter {
+	// case FILTER_NONE:
+	// 	sender, err = s.peerConnection.AddTrack(trackRtp)
+	// default:
+	// 	sender, err = s.peerConnection.AddTrack(trackSample)
+	// }
+	// if err != nil {
+	// 	log.Println("unable add track to the subscriber", err)
+	// 	return nil, err
+	// }
 
 	// var twccExt uint8
 	// for _, fb := range t.Codec().RTCPFeedback {
@@ -84,13 +84,26 @@ func (s *Subscriber) Track(t *webrtc.TrackRemote, recv *webrtc.RTPReceiver, filt
 	// }
 
 	trackContext := NewTrackContext(s.ctx, NewTrackContextParams{
-		ID:               id,
-		TrackRtp:         trackRtp,
-		TrackSample:      trackSample,
+		ID:          id,
+		StreamID:    t.StreamID(),
+		RID:         t.RID(),
+		SSRC:        t.SSRC(),
+		PayloadType: t.PayloadType(),
+
+		CodecParams: t.Codec(),
+		Kind:        t.Kind(),
+
+		// TrackRtp:         trackRtp,
+		// TrackSample:      trackSample,
+
 		Filter:           filter,
 		PipeAllocContext: s.pipeAllocContext,
+
+		PeerConnection: s.peerConnection,
+		API:            s.webrtc,
+
 		// Track:  track,
-		Sender: sender,
+		// Sender: sender,
 		// TWCC_EXT: twccExt,
 		// SSRC:     uint32(t.SSRC()),
 	})
