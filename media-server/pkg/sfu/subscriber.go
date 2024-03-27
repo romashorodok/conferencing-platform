@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/google/uuid"
 	webrtc "github.com/pion/webrtc/v3"
 )
 
@@ -25,11 +26,12 @@ type Subscriber struct {
 }
 
 // Create track context with default RTP sender
-func (s *Subscriber) Track(t *webrtc.TrackRemote, recv *webrtc.RTPReceiver, filter *Filter) (*TrackContext, error) {
+func (s *Subscriber) Track(streamID string, t *webrtc.TrackRemote, recv *webrtc.RTPReceiver, filter *Filter) (*TrackContext, error) {
 	s.tracksMu.Lock()
 	defer s.tracksMu.Unlock()
 
-	id := t.ID()
+	// id := t.ID()
+	id := uuid.NewString()
 
 	if track, exist := s.tracks[id]; exist {
 		if track != nil {
@@ -84,8 +86,9 @@ func (s *Subscriber) Track(t *webrtc.TrackRemote, recv *webrtc.RTPReceiver, filt
 	// }
 
 	trackContext := NewTrackContext(s.ctx, NewTrackContextParams{
-		ID:          id,
-		StreamID:    t.StreamID(),
+		ID:       id,
+		StreamID: streamID,
+		// StreamID:    t.StreamID(),
 		RID:         t.RID(),
 		SSRC:        t.SSRC(),
 		PayloadType: t.PayloadType(),

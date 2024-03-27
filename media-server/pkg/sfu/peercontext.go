@@ -34,6 +34,8 @@ type trackWritable interface {
 }
 
 func (p *PeerContext) OnTrack(peerContextPool *PeerContextPool) {
+	streamID := uuid.NewString()
+
 	p.peerConnection.OnTrack(func(t *webrtc.TrackRemote, recv *webrtc.RTPReceiver) {
 		// defer func() {
 		// 	for _, peer := range pool.Get() {
@@ -42,8 +44,9 @@ func (p *PeerContext) OnTrack(peerContextPool *PeerContextPool) {
 		// }()
 
 		filter := FILTER_NONE
+		// log.Println("On track", t.ID())
 
-		tctx, err := p.Subscriber.Track(t, recv, filter)
+		tctx, err := p.Subscriber.Track(streamID, t, recv, filter)
 		if err != nil {
 			err = errors.Join(err, ErrUnsupportedTrackCodec)
 			_ = p.Signal.conn.WriteJSON(err)
@@ -90,6 +93,8 @@ func (p *PeerContext) OnTrack(peerContextPool *PeerContextPool) {
 
 		_ = TrackContextRegistry.Add(tctx)
 		defer TrackContextRegistry.Remove(tctx)
+
+		log.Printf("%+v", p.Subscriber.tracks)
 
 		// track.OnSample(func(sample *media.Sample) {
 		// 	// pipe.Sink(sample.Data, sample.Timestamp, sample.Duration)
@@ -171,7 +176,7 @@ func (p *PeerContext) SwitchFilter(filterName string, mimeTypeName string) error
 
 	err = track.SetFilter(filter)
 	if err != nil {
-        log.Println("filter err", err)
+		log.Println("filter err", err)
 		return err
 	}
 
