@@ -96,66 +96,99 @@ RtpVP8::RtpVP8(char *trackID) : BasePipeline(trackID) {
   g_object_set(appsrc, "caps", caps, nullptr);
   gst_caps_unref(caps);
 
+  this->queueRtpSession = gst_element_factory_make("queue", nullptr);
+  g_object_set(queueRtpSession, "max-size-bytes", guint(10485760 * 8), nullptr);
+
   this->rtpsession = gst_element_factory_make("rtpjitterbuffer", nullptr);
   // Add GstReferenceTimestampMeta to buffers with the original reconstructed
   // reference clock timestamp.
-  g_object_set(rtpsession, "add-reference-timestamp-meta", TRUE, nullptr);
-  g_object_set(rtpsession, "drop-on-latency", TRUE, nullptr);
+  // g_object_set(rtpsession, "add-reference-timestamp-meta", TRUE, nullptr);
+  // g_object_set(rtpsession, "drop-on-latency", TRUE, nullptr);
   g_object_set(rtpsession, "mode", 0, nullptr);
 
+  this->identity = gst_element_factory_make("identity", nullptr);
+
   this->queueRtpvp8depay = gst_element_factory_make("queue", nullptr);
+  g_object_set(queueRtpvp8depay, "max-size-bytes", guint(10485760 * 8),
+               nullptr);
   this->rtpvp8depay = gst_element_factory_make("rtpvp8depay", nullptr);
   g_object_set(rtpvp8depay, "auto-header-extension", TRUE, nullptr);
   this->queueVp8dec = gst_element_factory_make("queue", nullptr);
+  g_object_set(queueVp8dec, "max-size-bytes", guint(10485760 * 8), nullptr);
   this->vp8dec = gst_element_factory_make("vp8dec", nullptr);
+  g_object_set(vp8dec, "threads", 16, nullptr);
+  this->queueVideoconvertIn = gst_element_factory_make("queue", nullptr);
+  g_object_set(queueVideoconvertIn, "max-size-bytes", guint(10485760 * 8),
+               nullptr);
   this->videoconvertIn = gst_element_factory_make("videoconvert", nullptr);
-  this->videoscale = gst_element_factory_make("videoscale", nullptr);
   this->queueDummyTransform = gst_element_factory_make("queue", nullptr);
+  g_object_set(queueDummyTransform, "max-size-bytes", guint(10485760 * 8),
+               nullptr);
   this->dummyTransform = gst_element_factory_make("visioncannyfilter", nullptr);
   // this->dummyTransform = gst_element_factory_make("edgedetect", nullptr);
   // this->dummyTransform = gst_element_factory_make("dummytransform", nullptr);
   this->videoconvertOut = gst_element_factory_make("videoconvert", nullptr);
 
   this->queueVp8enc = gst_element_factory_make("queue", nullptr);
+  g_object_set(queueVp8enc, "max-size-bytes", guint(10485760 * 8), nullptr);
   this->vp8enc = gst_element_factory_make("vp8enc", nullptr);
+
+  g_object_set(vp8enc, "min-quantizer", 2, nullptr);
+  g_object_set(vp8enc, "max-quantizer", 56, nullptr);
+  // g_object_set(vp8enc, "static-threshold", 1, nullptr);
+  g_object_set(vp8enc, "keyframe-max-dist", 10, nullptr);
+  g_object_set(vp8enc, "threads", 16, nullptr);
+
+  g_object_set(vp8enc, "undershoot", 100, nullptr);
+  g_object_set(vp8enc, "overshoot", 10, nullptr);
+
+  g_object_set(vp8enc, "buffer-size", 1000, nullptr);
+  g_object_set(vp8enc, "buffer-initial-size", 5000, nullptr);
+  g_object_set(vp8enc, "buffer-optimal-size", 600, nullptr);
 
   // Pictures are composed of slices that can be highly flexible in shape, and
   // each slice of a picture is coded completely independently of the other
   // slices in the same picture to enable enhanced loss/error resilience.
   g_object_set(vp8enc, "error-resilient", 1, nullptr);
-  // Maximum distance between keyframes (number of frames)
-  g_object_set(vp8enc, "keyframe-max-dist", 10, nullptr);
-  // Automatically generate AltRef frames
-  // When --auto-alt-ref is enabled the default mode of operation is to either
-  // populate the buffer with a copy of the previous golden frame when this
-  // frame is updated, or with a copy of a frame derived from some point of
-  // time in the future (the choice is made automatically by the encoder).
-  g_object_set(vp8enc, "auto-alt-ref", TRUE, nullptr);
+  // // Maximum distance between keyframes (number of frames)
+  // g_object_set(vp8enc, "keyframe-max-dist", 10, nullptr);
+  // // Automatically generate AltRef frames
+  // // When --auto-alt-ref is enabled the default mode of operation is to
+  // either
+  // // populate the buffer with a copy of the previous golden frame when this
+  // // frame is updated, or with a copy of a frame derived from some point of
+  // // time in the future (the choice is made automatically by the encoder).
+  // g_object_set(vp8enc, "auto-alt-ref", TRUE, nullptr);
   g_object_set(vp8enc, "deadline", 1, nullptr);
 
   // customprocessor
   this->cgoOnSampleSink = gst_element_factory_make("appsink", nullptr);
+  g_object_set(cgoOnSampleSink, "sync", FALSE, nullptr);
+  g_object_set(cgoOnSampleSink, "drop", TRUE, nullptr);
 
-  if (!this->rtpsession || !this->queueRtpvp8depay || !this->rtpvp8depay ||
-      !this->queueVp8dec || !this->vp8dec || !this->vp8enc ||
+  if (!this->queueRtpSession || !this->rtpsession || !this->identity ||
+      !this->queueRtpvp8depay || !this->rtpvp8depay || !this->queueVp8dec ||
+      !this->vp8dec || !this->queueVideoconvertIn || !this->vp8enc ||
       !this->queueDummyTransform || !this->dummyTransform ||
-      !this->videoconvertIn || !this->videoscale || !this->videoconvertOut ||
-      !this->queueVp8enc || !this->cgoOnSampleSink) {
+      !this->videoconvertIn || !this->videoconvertOut || !this->queueVp8enc ||
+      !this->cgoOnSampleSink) {
     g_printerr("Unable create the pipeline.\n");
     exit(1);
   }
 
   gst_bin_add_many(
-      GST_BIN(this->getPipeline()), this->getAppsrc(), this->rtpsession,
-      this->queueRtpvp8depay, this->rtpvp8depay, this->queueVp8dec,
-      this->vp8dec, this->videoconvertIn, this->videoscale,
+      GST_BIN(this->getPipeline()), this->getAppsrc(), this->queueRtpSession,
+      this->rtpsession, this->identity, this->queueRtpvp8depay,
+      this->rtpvp8depay, this->queueVp8dec, this->vp8dec,
+      this->queueVideoconvertIn, this->videoconvertIn,
       this->queueDummyTransform, this->dummyTransform, this->videoconvertOut,
       this->queueVp8enc, this->vp8enc, this->cgoOnSampleSink, nullptr);
 
   gst_element_link_many(
-      this->getAppsrc(), this->rtpsession, this->queueRtpvp8depay,
-      this->rtpvp8depay, this->queueVp8dec, this->vp8dec, this->videoconvertIn,
-      this->videoscale, this->queueDummyTransform, this->dummyTransform,
+      this->getAppsrc(), this->queueRtpSession, this->rtpsession,
+      this->identity, this->queueRtpvp8depay, this->rtpvp8depay,
+      this->queueVp8dec, this->vp8dec, this->queueVideoconvertIn,
+      this->videoconvertIn, this->queueDummyTransform, this->dummyTransform,
       this->videoconvertOut, this->queueVp8enc, this->vp8enc,
       this->cgoOnSampleSink, nullptr);
 
@@ -171,11 +204,14 @@ RtpVP8::RtpVP8(char *trackID) : BasePipeline(trackID) {
 
 RtpVP8::~RtpVP8() {
   std::cout << "destory from rtp VP8 pipe" << std::endl;
+  gst_element_deinit(queueRtpSession);
   gst_element_deinit(rtpsession);
+  gst_element_deinit(identity);
   gst_element_deinit(queueRtpvp8depay);
   gst_element_deinit(rtpvp8depay);
   gst_element_deinit(queueVp8dec);
   gst_element_deinit(vp8dec);
+  gst_element_deinit(queueVideoconvertIn);
   gst_element_deinit(videoconvertIn);
   gst_element_deinit(queueDummyTransform);
   gst_element_deinit(dummyTransform);

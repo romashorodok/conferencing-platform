@@ -6,7 +6,6 @@
 
 // Also there is w3 draft but it's too outdated/not working examples
 // https://www.w3.org/TR/mediacapture-transform/#video-processing
-//
 
 
 self.onmessage = async (event) => {

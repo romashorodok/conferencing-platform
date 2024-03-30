@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pion/rtp"
@@ -102,6 +104,30 @@ func NewTrackWriterSample(codecCaps webrtc.RTPCodecCapability, id, streamID stri
 	}, nil
 }
 
+type TrackContextMediaChange struct {
+	track *TrackContext
+}
+
+type TrackContextClose struct{}
+
+type TrackContextEvent interface {
+	TrackContextMediaChange | TrackContextClose
+}
+
+type TrackContextMessage[F any] struct {
+	value F
+}
+
+func (m *TrackContextMessage[F]) Unbox() F {
+	return m.value
+}
+
+func NewTrackContextMessage[F TrackContextEvent](evt F) TrackContextMessage[any] {
+	return TrackContextMessage[any]{
+		value: evt,
+	}
+}
+
 type TrackContext struct {
 	webrtc   *webrtc.API
 	id       string
@@ -111,7 +137,9 @@ type TrackContext struct {
 	ssrc        webrtc.SSRC
 	payloadType webrtc.PayloadType
 
-	media       TrackWriter
+	media   TrackWriter
+	mediaMu sync.Mutex
+
 	codecParams webrtc.RTPCodecParameters
 	codecKind   webrtc.RTPCodecType
 
@@ -125,11 +153,14 @@ type TrackContext struct {
 	filter           *Filter
 	pipeAllocContext *AllocatorsContext
 
+	observers   []chan TrackContextMessage[any]
+	observersMu sync.Mutex
+
 	// pipes     []Pipeline
 	// sampleBus chan *media.Sample
 
 	ctx    context.Context
-	cancel context.CancelCauseFunc
+	cancel context.CancelFunc
 }
 
 func (t *TrackContext) GetTrackWriterRTP() (TrackWriterRTP, error) {
@@ -204,9 +235,19 @@ func (t *TrackContext) GetTrackRemoteWriterSample() (TrackRemoteWriterSample, er
 // }
 
 func (t *TrackContext) Close() (err error) {
-	err = t.sender.ReplaceTrack(nil)
-	err = t.sender.Stop()
-	t.cancel(ErrTrackCancelByUser)
+	log.Println("close track", t.ID())
+	t.cancel()
+
+	select {
+	case <-t.Done():
+		log.Println("Valid close 1")
+	}
+
+	select {
+	case <-t.Done():
+		log.Println("Valid close 2")
+	}
+
 	return
 }
 
@@ -217,6 +258,14 @@ func (t *TrackContext) OnCloseAsync(f func()) {
 			f()
 		}
 	}()
+}
+
+func (t *TrackContext) Done() <-chan struct{} {
+	return t.ctx.Done()
+}
+
+func (t *TrackContext) DoneErr() error {
+	return t.ctx.Err()
 }
 
 func (t *TrackContext) ID() string {
@@ -305,19 +354,19 @@ func (t *TrackContext) SetFilter(filter *Filter) error {
 	// 	return err
 	// }
 
-	if t.sender != nil {
-		if err = t.peerConnection.RemoveTrack(t.sender); err != nil {
-			log.Println("err track")
-			return err
-		}
-	}
-
-	sender, err := t.peerConnection.AddTrack(media.GetLocalTrack())
-	if err != nil {
-		log.Println("err add track")
-	}
-
-	t.sender = sender
+	// if t.sender != nil {
+	// 	if err = t.peerConnection.RemoveTrack(t.sender); err != nil {
+	// 		log.Println("err track")
+	// 		return err
+	// 	}
+	// }
+	//
+	// sender, err := t.peerConnection.AddTrack(media.GetLocalTrack())
+	// if err != nil {
+	// 	log.Println("err add track")
+	// }
+	//
+	// t.sender = sender
 
 	//
 	// t.media.GetLocalTrack()
@@ -346,13 +395,62 @@ func (t *TrackContext) SetFilter(filter *Filter) error {
 	// }
 	// log.Printf("replace track %+v", media)
 
+	t.mediaMu.Lock()
 	t.filter = filter
 	t.media = media
+	t.dispatch(NewTrackContextMessage(TrackContextMediaChange{
+        track: t,
+    }))
+	t.mediaMu.Unlock()
 	return nil
 }
 
 func (t *TrackContext) Filter() *Filter {
 	return t.filter
+}
+
+func (t *TrackContext) GetLocalTrack() webrtc.TrackLocal {
+	t.mediaMu.Lock()
+	defer t.mediaMu.Unlock()
+	return t.media.GetLocalTrack()
+}
+
+func (t *TrackContext) dispatch(msg TrackContextMessage[any]) {
+	t.observersMu.Lock()
+	defer t.observersMu.Unlock()
+
+	for _, ch := range t.observers {
+		go func(c chan TrackContextMessage[any]) {
+			select {
+			case <-t.Done():
+				return
+			case c <- msg:
+				return
+			}
+		}(ch)
+	}
+}
+
+func (t *TrackContext) TrackObserver() <-chan TrackContextMessage[any] {
+	t.observersMu.Lock()
+	defer t.observersMu.Unlock()
+
+	ch := make(chan TrackContextMessage[any])
+	t.observers = append(t.observers, ch)
+	return ch
+}
+
+func (t *TrackContext) TrackObserverUnref(obs <-chan TrackContextMessage[any]) {
+	t.observersMu.Lock()
+	defer t.observersMu.Unlock()
+
+	for i, observer := range t.observers {
+		if obs == observer {
+			close(observer)
+			t.observers = append(t.observers[:i], t.observers[i+1:]...)
+			return
+		}
+	}
 }
 
 type NewTrackContextParams struct {
@@ -381,7 +479,8 @@ func NewTrackContext(ctx context.Context, params NewTrackContextParams) *TrackCo
 		params.Filter = FILTER_NONE
 	}
 
-	c, cancel := context.WithCancelCause(ctx)
+	c, cancel := context.WithCancel(ctx)
+
 	trackContext := &TrackContext{
 		webrtc:      params.API,
 		id:          params.ID,
@@ -399,6 +498,8 @@ func NewTrackContext(ctx context.Context, params NewTrackContextParams) *TrackCo
 
 		// track:  params.Track,
 		pipeAllocContext: params.PipeAllocContext,
+
+		observers: make([]chan TrackContextMessage[any], 0),
 		// filter: params.Filter,
 		ctx:    c,
 		cancel: cancel,
@@ -411,4 +512,45 @@ func NewTrackContext(ctx context.Context, params NewTrackContextParams) *TrackCo
 	}
 
 	return trackContext
+}
+
+type ActiveTrackContext struct {
+	trackContext *TrackContext
+	sender       atomic.Pointer[*webrtc.RTPSender]
+}
+
+func (a *ActiveTrackContext) LoadSender() *webrtc.RTPSender {
+	return *a.sender.Load()
+}
+
+func (a *ActiveTrackContext) StoreSender(s *webrtc.RTPSender) {
+	a.sender.Store(&s)
+}
+
+func (a *ActiveTrackContext) SwitchActiveTrackMedia(pc *webrtc.PeerConnection) error {
+	sender := a.LoadSender()
+	if sender == nil {
+		return ErrSwitchActiveTrackNotFoundSender
+	}
+
+	if err := pc.RemoveTrack(sender); err != nil {
+		return err
+	}
+
+	var err error
+	sender = nil
+
+	sender, err = pc.AddTrack(a.trackContext.GetLocalTrack())
+	if err != nil {
+		return err
+	}
+
+	a.StoreSender(sender)
+	return nil
+}
+
+func NewActiveTrackContext(sender *webrtc.RTPSender, track *TrackContext) *ActiveTrackContext {
+	a := &ActiveTrackContext{trackContext: track}
+	a.StoreSender(sender)
+	return a
 }

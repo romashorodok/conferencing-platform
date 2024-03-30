@@ -12,13 +12,15 @@ public:
   inline GstElement *getCgoOnSampleSink() const { return cgoOnSampleSink; }
 
 private:
+  GstElement *queueRtpSession;
   GstElement *rtpsession;
+  GstElement *identity;
   GstElement *queueRtpvp8depay;
   GstElement *rtpvp8depay;
   GstElement *queueVp8dec;
   GstElement *vp8dec;
+  GstElement *queueVideoconvertIn;
   GstElement *videoconvertIn;
-  GstElement *videoscale;
   GstElement *queueDummyTransform;
   GstElement *dummyTransform;
   GstElement *videoconvertOut;

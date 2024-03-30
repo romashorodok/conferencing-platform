@@ -38,45 +38,13 @@ func (s *Signal) OnAnswer(data []byte) error {
 	return s.agent.SetAnswer(answer)
 }
 
-func debounceWrite(fn func(string) (bool, error), delay time.Duration) func(string) (bool, error) {
-	var (
-		mu    sync.Mutex
-		last  time.Time
-		timer *time.Timer
-	)
-	return func(offer string) (result bool, err error) {
-		mu.Lock()
-		defer mu.Unlock()
-
-		if timer != nil {
-			timer.Stop()
-		}
-
-		elapsed := time.Since(last)
-		if elapsed > delay {
-			result, err = fn(offer)
-			last = time.Now()
-			return
-		}
-
-		timer = time.AfterFunc(delay-elapsed, func() {
-			mu.Lock()
-			defer mu.Unlock()
-			result, err = fn(offer)
-			last = time.Now()
-		})
-
-		return result, err
-	}
-}
-
 func (s *Signal) DispatchOffer() error {
 	s.signalMu.Lock()
 	defer s.signalMu.Unlock()
 
-	sleep := func() { time.Sleep(time.Millisecond * 30) }
+	sleep := func() { time.Sleep(time.Millisecond * 100) }
 
-	debounceWriteOffer := debounceWrite(func(offer string) (bool, error) {
+	offerWriter := func(offer string) (bool, error) {
 		if err := s.conn.WriteJSON(&websocketMessage{
 			Event: "offer",
 			Data:  offer,
@@ -84,11 +52,19 @@ func (s *Signal) DispatchOffer() error {
 			return false, err
 		}
 		return true, nil
-	}, time.Second)
+	}
 
 	for attempt := 0; ; attempt++ {
-		log.Println("[Signal attempt] attempt", attempt)
+		// log.Println("[Signal attempt] attempt", attempt)
 		offer, err := s.agent.Offer()
+
+		if attempt >= 25 {
+			go func() {
+				sleep()
+				s.DispatchOffer()
+			}()
+			return ErrSignalRetry
+		}
 
 		switch {
 		case errors.Is(err, ErrPeerConnectionClosed):
@@ -100,17 +76,13 @@ func (s *Signal) DispatchOffer() error {
 		default:
 		}
 
-		if attempt >= 25 {
-			go func() {
-				sleep()
-				s.DispatchOffer()
-			}()
-			break
+		success, err := offerWriter(offer)
+		if errors.Is(err, websocket.ErrCloseSent) {
+			return err
 		}
 
-		success, err := debounceWriteOffer(offer)
-		if errors.Is(err, websocket.ErrCloseSent) || success {
-			return err
+		if success {
+			break
 		}
 	}
 	return nil

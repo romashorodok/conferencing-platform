@@ -86,7 +86,7 @@ extern "C" void write_pipe(void *pipe, void *buffer, int len) {
   if (src != nullptr) {
     gpointer p = g_memdup2(buffer, len);
     GstBuffer *buffer = gst_buffer_new_wrapped(p, len);
-    // buffer->duration = GST_MSECOND;
+    buffer->duration = GST_MSECOND;
     gst_app_src_push_buffer(GST_APP_SRC(src), buffer);
   }
 

@@ -40,7 +40,7 @@ var _ sfu.Pipeline = (*RtpVP8)(nil)
 //export CGO_rtp_vp8_dummy_sample
 func CGO_rtp_vp8_dummy_sample(trackID *C.char, buffer unsafe.Pointer, size C.int, duration C.int) {
 	defer C.free(buffer)
-	log.Println("on sample", trackID)
+	// log.Println("on sample", trackID)
 	track := sfu.TrackContextRegistry.GetByID(C.GoString(trackID))
 	if track == nil {
 		log.Printf("Drop sample for track: %s", C.GoString(trackID))
@@ -60,7 +60,7 @@ func CGO_rtp_vp8_dummy_sample(trackID *C.char, buffer unsafe.Pointer, size C.int
 		Duration: time.Millisecond,
 	})
 
-	log.Println("result of write", err)
+	// log.Println("result of write", err)
 
 	// track.WriteSample(media.Sample{
 	// 	Data: C.GoBytes(buffer, size),

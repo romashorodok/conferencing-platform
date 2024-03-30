@@ -53,7 +53,7 @@ type PageData = {
 
 function RoomPage() {
   const { roomID } = useParams<PageData>()
-  const { join, roomMediaStreamList, videoFilterList, setVideoFilter } = useRoom()
+  const { join, roomMediaList, videoFilterList, setVideoFilter } = useRoom()
   const { onPageMountMediaStreamMutex } = useContext(MediaStreamContext)
 
   useEffect(() => {
@@ -77,7 +77,7 @@ function RoomPage() {
       <CameraComponent />
 
       <div>
-        {Object.entries(roomMediaStreamList).map(([id, { stream }]) => (
+        {Object.entries(roomMediaList).map(([id, { stream }]) => (
           <RoomStream key={id} mediaStream={stream} />
         ))}
       </div>

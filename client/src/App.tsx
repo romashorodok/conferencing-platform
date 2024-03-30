@@ -14,7 +14,7 @@ import * as Popover from '@radix-ui/react-popover';
 import * as ScrollArea from '@radix-ui/react-scroll-area';
 import LoadingDots from './base/loading-dots'
 import { MEDIA_SERVER_WS } from './variables'
-import { RoomMediaStreamListContext } from './rtc/RoomMediaStreamListProvider'
+import { MediaStreamContextReducer, RoomMediaStreamListContext } from './rtc/RoomMediaStreamListProvider'
 
 export class Mutex {
   wait: Promise<void>;
@@ -211,8 +211,25 @@ export function useRoom() {
   const { mediaStream } = useContext(MediaStreamContext)
   const { peerContext, setPeerContext } = useContext(SubscriberContext)
   const { signal, setSignal } = useContext(SignalContext)
-  const { roomMediaStreamList, setRoomMediaStream } = useContext(RoomMediaStreamListContext)
   const [videoFilterList, setVideoFilterList] = useState<Array<Filter>>([])
+
+  const { roomMediaStreamList, setRoomMediaStream } = useContext(RoomMediaStreamListContext)
+  const [roomMediaList, setRoomMediaList] = useState<MediaStreamContextReducer>({})
+
+  useEffect(() => {
+    (async () => {
+      const list = await roomMediaStreamList
+      console.log(list)
+      for (const [id, { stream }] of Object.entries(list)) {
+        console.log("--- BEGIN", id, "BEGIN ---")
+        console.log(stream.getTracks())
+        console.log("--- END", id, "END ---")
+      }
+
+      setRoomMediaList(list)
+    })()
+  }, [roomMediaStreamList])
+
 
   const sinkMediaStream = useCallback(() => {
     if (!mediaStream || !peerContext)
@@ -308,9 +325,9 @@ export function useRoom() {
         const [stream] = evt.streams
         setRoomMediaStream({ action: 'mutate', payload: { [stream.id]: evt } })
 
-        stream.onremovetrack = () => {
-          console.log("remove track")
-          setRoomMediaStream({ action: 'mutate', payload: { [stream.id]: undefined } })
+        stream.onremovetrack = (evt) => {
+          console.log("on remove track", evt)
+          setRoomMediaStream({ action: 'remove', payload: { [stream.id]: evt } })
         }
       }
 
@@ -332,7 +349,7 @@ export function useRoom() {
 
   }, [signal]);
 
-  return { join, roomMediaStreamList, sinkMediaStream, videoFilterList, setVideoFilter }
+  return { join, roomMediaList, sinkMediaStream, videoFilterList, setVideoFilter }
 }
 
 export function CameraComponent() {
@@ -605,12 +622,13 @@ export function RoomStream({
 }
 
 function Room() {
-  const { roomMediaStreamList } = useRoom()
+  const { roomMediaList } = useRoom()
+
 
   // <button onClick={join}>Join</button>
   return (
     <div>
-      {Object.entries(roomMediaStreamList).map(([id, { stream }]) => (
+      {Object.entries(roomMediaList).map(([id, { stream }]) => (
         <RoomStream key={id} mediaStream={stream} />
       ))}
     </div>

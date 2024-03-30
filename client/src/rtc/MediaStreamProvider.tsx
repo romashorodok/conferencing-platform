@@ -1,5 +1,5 @@
 import { PropsWithChildren, createContext, useEffect, useState } from "react";
-import { isChromiumBased } from "../helpers";
+import { isChromiumBased, isFireFox } from "../helpers";
 import { Mutex } from "../App";
 
 type MediaStreamContextType = {
@@ -13,14 +13,58 @@ type MediaStreamContextType = {
 
 export const MediaStreamContext = createContext<MediaStreamContextType>(undefined!)
 
-const videoStream = navigator.mediaDevices.getUserMedia({
-  video: true,
+async function videoScaleCanvas(streamPromise: Promise<MediaStream>, width: number, height: number): Promise<MediaStream> {
+  const video = document.createElement('video');
+  video.width = width
+  video.height = height
+  const canvas = document.createElement('canvas');
+
+  // @ts-ignore
+  const offscreen: OffscreenCanvas = canvas.transferControlToOffscreen()
+  offscreen.width = width
+  offscreen.height = height
+  const ctx = offscreen.getContext('2d');
+
+  const stream = await streamPromise
+  const caps = stream.getVideoTracks()[0].getSettings()
+
+  console.info(`videoScaleCanvas enabled | inbound: ${caps.width}x${caps.height}, outbound: ${width}x${height}`)
+
+  const videoTrack = new Array<MediaStreamTrack>(stream.getVideoTracks()[0])
+  const inboundStream = new MediaStream(videoTrack)
+  video.srcObject = inboundStream
+
+  function drawAndDownscale() {
+    ctx?.clearRect(0, 0, canvas.width, canvas.height);
+    ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
+    requestAnimationFrame(drawAndDownscale);
+  }
+
+  video.addEventListener('play', drawAndDownscale);
+  video.play()
+
+  return canvas.captureStream().clone()
+}
+
+let videoStream: Promise<MediaStream>
+if (isChromiumBased()) {
+  videoStream = navigator.mediaDevices.getUserMedia({
+    video: {
+      width: { exact: 320 },
+      height: { exact: 180 }
+    },
+  })
+} else if (isFireFox()) {
   // NOTE: Firefox not support low resolutions
-  // video: {
-  //   width: { exact: 448 },
-  //   height: { exact: 216 }
-  // },
-})
+  // This lead that I need high performance, when I do the filter of the stream
+  const inbound = navigator.mediaDevices.getUserMedia({ video: true })
+  // NOTE: workaround of that problem. This not lead to high cpu usage
+  // But also the drawing may be in a web-worker
+  videoStream = videoScaleCanvas(inbound, 320, 180)
+
+} else {
+  throw new Error("unsupported browser target")
+}
 
 const audioConfig: MediaTrackConstraints = {
   noiseSuppression: true,
@@ -75,6 +119,7 @@ const defaultMediaStream =
 
   })
 
+// NOTE: Insertable stream. Chrome only feature
 const faceDetectionMediaStream = (faceDetectorWorker: Worker): Promise<MediaStream> =>
   new Promise(async (resolve, reject) => {
     if (!isChromiumBased()) {

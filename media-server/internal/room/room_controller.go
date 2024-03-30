@@ -103,6 +103,7 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 		API:              ctrl.webrtc,
 		WS:               w,
 		PipeAllocContext: ctrl.pipeAllocContext,
+		Spreader:         roomCtx.peerContextPool,
 	})
 	peerContext.SetStats(<-ctrl.stats)
 	ctrl.peerConnectionMu.Unlock()
@@ -122,7 +123,7 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 		return ctrl.wsError(w, err)
 	}
 
-	peerContext.OnTrack(roomCtx.peerContextPool)
+	peerContext.OnTrack()
 
 	peerContext.OnConnectionStateChange(func(p webrtc.PeerConnectionState) {
 		switch p {
@@ -136,6 +137,7 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 
 		case webrtc.PeerConnectionStateClosed, webrtc.PeerConnectionStateFailed:
 			peerContext.Close(sfu.ErrPeerConnectionClosed)
+			roomCtx.peerContextPool.Remove(peerContext)
 			roomCtx.peerContextPool.DispatchOffers()
 		}
 	})
@@ -146,10 +148,11 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 	// 	ticker := time.NewTicker(time.Second * 10)
 	// 	for {
 	// 		select {
-	// 		case <-peerContext.ctx.Done():
+	// 		case <-peerContext.Done():
 	// 			return
 	// 		case <-ticker.C:
-	// 			peerContext.SignalPeerConnection()
+	// 			roomCtx.peerContextPool.SanitizePeerSenders(peerContext)
+	// 			log.Println("dispatch offer")
 	// 		}
 	// 	}
 	// }()
@@ -180,8 +183,6 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 				goto retry
 			}
 		}
-
-		log.Println("Send")
 	}()
 
 	message := &websocketMessage{}
@@ -217,7 +218,7 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 			}
 
 			if err := peerContext.SwitchFilter(fData.Name, fData.MimeType); err != nil {
-                log.Println(err)
+				log.Println(err)
 				return ctrl.wsError(w, err)
 			}
 

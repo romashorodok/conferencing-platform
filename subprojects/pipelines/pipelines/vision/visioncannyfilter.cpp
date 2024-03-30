@@ -1,13 +1,18 @@
 #include "visioncannyfilter.h"
 #include <iostream>
 
-static GstStaticPadTemplate sink_factory =
-    GST_STATIC_PAD_TEMPLATE("sink", GST_PAD_SINK, GST_PAD_ALWAYS,
-                            GST_STATIC_CAPS(GST_VIDEO_CAPS_MAKE("RGB")));
+// GST_STATIC_CAPS(GST_VIDEO_CAPS_MAKE("RGB"))
+#define LOW_PROFILE(format)                                                    \
+  "video/x-raw, "                                                              \
+  "format = (string) " format ", "                                             \
+  "width = (int)[ 1, 1280 ], "                                                 \
+  "height = (int)[ 1, 720 ], "                                                 \
+  "framerate = (fraction) [ 0, 30 ]"
 
-static GstStaticPadTemplate src_factory =
-    GST_STATIC_PAD_TEMPLATE("src", GST_PAD_SRC, GST_PAD_ALWAYS,
-                            GST_STATIC_CAPS(GST_VIDEO_CAPS_MAKE("RGB")));
+static GstStaticPadTemplate sink_factory = GST_STATIC_PAD_TEMPLATE(
+    "sink", GST_PAD_SINK, GST_PAD_ALWAYS, GST_STATIC_CAPS(LOW_PROFILE("RGB")));
+static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE(
+    "src", GST_PAD_SRC, GST_PAD_ALWAYS, GST_STATIC_CAPS(LOW_PROFILE("RGB")));
 
 G_DEFINE_TYPE(CANNY_FILTER_TYPE_NAME, CANNY_FILTER_NAME, VISION_TYPE_FRAME)
 
@@ -17,10 +22,10 @@ static GstFlowReturn vision_canny_filter_on_frame(VisionFrame *base,
                                                   cv::Mat outimg) {
   auto filter = VISION_CANNY_FILTER(base);
 
+  // cv::cvtColor(img, filter->cvEdge, cv::COLOR_BGR2GRAY);
+
   cv::cvtColor(img, filter->cvGray, cv::COLOR_BGR2GRAY);
-
   cv::medianBlur(filter->cvGray, filter->cvGray, 3);
-
   cv::Canny(filter->cvGray, filter->cvEdge, 60, 160, 3);
 
   outimg.setTo(cv::Scalar::all(0));
