@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/pion/rtcp"
-	webrtc "github.com/pion/webrtc/v3"
+	webrtc "github.com/pion/webrtc/v4"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/peercontext"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/protocol"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/sfu"

@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 
 	"github.com/google/uuid"
-	webrtc "github.com/pion/webrtc/v3"
+	webrtc "github.com/pion/webrtc/v4"
 )
 
 type watchTrackAck struct {

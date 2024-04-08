@@ -1,7 +1,7 @@
 package sfu
 
 import (
-	"github.com/pion/webrtc/v3/pkg/media/samplebuilder"
+	"github.com/pion/webrtc/v4/pkg/media/samplebuilder"
 )
 
 type TrackContextVp8 struct {

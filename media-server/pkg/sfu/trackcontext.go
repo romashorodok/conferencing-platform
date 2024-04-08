@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/pion/rtp"
-	webrtc "github.com/pion/webrtc/v3"
-	"github.com/pion/webrtc/v3/pkg/media"
+	webrtc "github.com/pion/webrtc/v4"
+	"github.com/pion/webrtc/v4/pkg/media"
 )
 
 type TrackWriterRTP interface {

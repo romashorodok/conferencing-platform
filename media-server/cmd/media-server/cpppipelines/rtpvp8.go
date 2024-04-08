@@ -11,7 +11,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/pion/webrtc/v3/pkg/media"
+	"github.com/pion/webrtc/v4/pkg/media"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/sfu"
 )
 
