@@ -33,7 +33,6 @@ type Subscriber struct {
 	peerId string
 	sid    string
 
-	// tracks               map[string]*ActiveTrackContext
 	tracks   sync.Map
 	tracksMu sync.Mutex
 
@@ -189,67 +188,13 @@ func (s *Subscriber) Track(streamID string, t *webrtc.TrackRemote, recv *webrtc.
 	defer s.tracksMu.Unlock()
 
 	id := t.ID()
-	// NOTE: chrome may send track without id
 	if id == "" {
 		id = uuid.NewString()
 	}
 
-	// if track, exist := s.tracks[id]; exist {
-	// 	if track != nil {
-	// 		return track, nil
-	// 	}
-	// }
-
-	// NOTE: Track may have same id, but it may have different layerID(RID)
-	// trackRtp, err := webrtc.NewTrackLocalStaticRTP(t.Codec().RTPCodecCapability, id, t.StreamID())
-	// if err != nil {
-	// 	log.Println("unable create track for rtp.", err)
-	// 	return nil, err
-	// }
-	//
-	// trackSample, err := webrtc.NewTrackLocalStaticSample(t.Codec().RTPCodecCapability, id, t.StreamID())
-	// if err != nil {
-	// 	log.Println("unable create track sample.")
-	// 	return nil, err
-	// }
-
-	// var sender *webrtc.RTPSender
-	// err = nil
-	// switch filter {
-	// case FILTER_NONE:
-	// 	sender, err = s.peerConnection.AddTrack(trackRtp)
-	// default:
-	// 	sender, err = s.peerConnection.AddTrack(trackSample)
-	// }
-	// if err != nil {
-	// 	log.Println("unable add track to the subscriber", err)
-	// 	return nil, err
-	// }
-
-	// var twccExt uint8
-	// for _, fb := range t.Codec().RTCPFeedback {
-	// 	switch fb.Type {
-	// 	case webrtc.TypeRTCPFBGoogREMB:
-	// 	case webrtc.TypeRTCPFBNACK:
-	// 		log.Printf("Unsupported rtcp feedbacak %s type", fb.Type)
-	// 		continue
-	//
-	// 	case webrtc.TypeRTCPFBTransportCC:
-	// 		if strings.HasPrefix(t.Codec().MimeType, "video") {
-	// 			for _, ext := range recv.GetParameters().HeaderExtensions {
-	// 				if ext.URI == sdp.TransportCCURI {
-	// 					twccExt = uint8(ext.ID)
-	// 					break
-	// 				}
-	// 			}
-	// 		}
-	// 	}
-	// }
-
 	trackContext := NewTrackContext(s.ctx, NewTrackContextParams{
-		ID:       id,
-		StreamID: streamID,
-		// StreamID:    t.StreamID(),
+		ID:          id,
+		StreamID:    streamID,
 		RID:         t.RID(),
 		SSRC:        t.SSRC(),
 		PayloadType: t.PayloadType(),
@@ -257,22 +202,12 @@ func (s *Subscriber) Track(streamID string, t *webrtc.TrackRemote, recv *webrtc.
 		CodecParams: t.Codec(),
 		Kind:        t.Kind(),
 
-		// TrackRtp:         trackRtp,
-		// TrackSample:      trackSample,
-
 		Filter:           filter,
 		PipeAllocContext: s.pipeAllocContext,
 
 		PeerConnection: s.peerConnection,
 		API:            s.webrtc,
-
-		// Track:  track,
-		// Sender: sender,
-		// TWCC_EXT: twccExt,
-		// SSRC:     uint32(t.SSRC()),
 	})
-	// s.tracks[id] = trackContext
-	// return trackContext, nil
 
 	return s.AttachTrack(trackContext)
 }
@@ -289,33 +224,6 @@ func (s *Subscriber) DetachTrack(t *TrackContext) watchTrackAck {
 	return ack
 }
 
-// func (s *Subscriber) Attach(t *TrackContext) (*TrackContext, error) {
-// 	s.tracksMu.Lock()
-// 	defer s.tracksMu.Unlock()
-//
-// 	if track, exist := s.tracks[t.ID()]; exist {
-// 		if track != nil {
-// 			return track, nil
-// 		}
-// 	}
-//
-// 	s.tracks[t.ID()] = t
-// 	return t, nil
-// }
-
-// func (s *Subscriber) LoopbackTrack(t *webrtc.TrackRemote, recv *webrtc.RTPReceiver) (*LoopbackTrackContext, error) {
-// 	trackCtx, err := s.Track(t, recv)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-//
-// 	s.loopback[trackCtx.track.ID()] = &LoopbackTrackContext{
-// 		TrackContext: trackCtx,
-// 	}
-//
-// 	return s.loopback[trackCtx.track.ID()], nil
-// }
-
 var EmptyActiveTrackContext = &ActiveTrackContext{}
 
 func (s *Subscriber) HasTrack(trackID string) (*ActiveTrackContext, bool) {
@@ -328,64 +236,6 @@ func (s *Subscriber) HasTrack(trackID string) (*ActiveTrackContext, bool) {
 	}
 	return track.(*ActiveTrackContext), exist
 }
-
-func (s *Subscriber) ActiveTracks() map[string]*ActiveTrackContext {
-	s.tracksMu.Lock()
-	defer s.tracksMu.Unlock()
-
-	senders := s.peerConnection.GetSenders()
-
-	result := make(map[string]*ActiveTrackContext)
-
-	var retryCount int
-retry:
-	for _, sender := range senders {
-		if sender == nil {
-			log.Println("[ActiveTracks] sender nil. retry", retryCount)
-			goto retry
-		}
-
-		senderTrack := sender.Track()
-		if senderTrack == nil {
-			// if retryCount > 3 {
-			// 	retryCount = 0
-			// 	senders = append(senders[:idx], senders[idx+1:]...)
-			//              goto retry
-			// }
-
-			log.Println("[ActiveTracks] sender track nil. retry", retryCount)
-			retryCount++
-			goto retry
-		}
-
-		id := senderTrack.ID()
-
-		track, exist := s.MapExistTrack(id)
-		if !exist {
-			continue
-		}
-
-		result[id] = track.(*ActiveTrackContext)
-	}
-
-	return result
-}
-
-// TODO: I must delete track from peer connection not at all. Currently I have detach
-// func (s *Subscriber) DeleteTrack(trackID string) (err error) {
-// 	s.tracksMu.Lock()
-// 	defer s.tracksMu.Unlock()
-//
-// 	active, exist := s.tracks[trackID]
-// 	if !exist {
-// 		return errors.New("Track not exist. Unable delete")
-// 	}
-//
-// 	s.peerConnection.RemoveTrack(active.sender)
-// 	err = active.trackContext.Close()
-// 	delete(s.tracks, trackID)
-// 	return err
-// }
 
 func (s *Subscriber) DeleteTrack(t *ActiveTrackContext) error {
 	s.tracksMu.Lock()
@@ -415,12 +265,6 @@ func (s *Subscriber) Close() (err error) {
 		s.MapDeleteTrack(id)
 		return true
 	})
-
-	// for id, active := range s.tracks {
-	// 	_ = s.peerConnection.RemoveTrack(active.LoadSender())
-	// 	_ = active.trackContext.Close()
-	// 	delete(s.tracks, id)
-	// }
 
 	return err
 }

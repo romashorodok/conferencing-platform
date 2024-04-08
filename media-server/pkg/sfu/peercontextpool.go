@@ -138,13 +138,11 @@ func (s *PeerContextPool) TrackDownStopToPeers(ctx context.Context, t *TrackCont
 }
 
 func (s *PeerContextPool) SanitizePeerSenders(peerTarget *PeerContext) error {
-	peerTargetSubTracks := peerTarget.Subscriber.ActiveTracks()
-
 	attachedSenders := make(map[string]*webrtc.RTPSender)
 
 	for _, peer := range s.pool {
 		for tID, pubTrack := range peer.publishTracks {
-			if track, exist := peerTargetSubTracks[tID]; exist {
+			if track, exist := peerTarget.Subscriber.HasTrack(tID); exist {
 				sender := track.LoadSender()
 				if sender != nil {
 					attachedSenders[track.trackContext.ID()] = sender
