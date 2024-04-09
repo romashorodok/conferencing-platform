@@ -22,5 +22,10 @@ var (
 	ErrWatchTrackDetachSenderNotFound = errors.New("subscriber sender not found. ")
 
 	// ** ActiveTrackContext
-	ErrSwitchActiveTrackNotFoundSender = errors.New("active track context not found sender")
+	ErrSwitchActiveTrackNotFoundSender      = errors.New("active track context not found sender")
+	ErrSwitchActiveTrackNotFoundTransiv     = errors.New("active track context not found transiver")
+	ErrSwitchActiveTrackUnableCreateTransiv = errors.New("unable re-create new transiver")
+
+	// ** SessionDesc
+	ErrSubmitEmptyPendingSessionDesc = errors.New("don't have pending session desc to submit. ")
 )

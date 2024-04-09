@@ -86,7 +86,7 @@ func (r *roomContext) Info() room.Room {
 
 	for _, p := range r.peerContextPool.Get() {
 		participants = append(participants, room.Participant{
-			Id: p.PeerID,
+			Id: p.PeerID(),
 		})
 	}
 

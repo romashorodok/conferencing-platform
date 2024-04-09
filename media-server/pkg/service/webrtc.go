@@ -85,10 +85,9 @@ func webrtcAPI(params webrtcAPI_Params) (*webrtc.API, chan *rtpstats.RtpStats, e
 	// 		gcc.SendSideBWEPacer(gcc.NewNoOpPacer()))
 	// })
 	// interceptorRegistry.Add(congestionControl)
-
-	if err = webrtc.ConfigureTWCCHeaderExtensionSender(mediaEngine, interceptorRegistry); err != nil {
-		return nil, nil, err
-	}
+	// if err = webrtc.ConfigureTWCCHeaderExtensionSender(mediaEngine, interceptorRegistry); err != nil {
+	// 	return nil, nil, err
+	// }
 
 	if err := webrtc.RegisterDefaultInterceptors(mediaEngine, interceptorRegistry); err != nil {
 		return nil, nil, err

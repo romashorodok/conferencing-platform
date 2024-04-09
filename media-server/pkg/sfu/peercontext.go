@@ -6,30 +6,129 @@ import (
 	"errors"
 	"io"
 	"log"
+	"reflect"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/google/uuid"
 	webrtc "github.com/pion/webrtc/v4"
-	"github.com/romashorodok/conferencing-platform/media-server/pkg/protocol"
+	"github.com/pion/webrtc/v4/pkg/rtcerr"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/rtpstats"
 )
+
+type SessionDesc struct {
+	negotiated atomic.Pointer[webrtc.SessionDescription]
+	pending    atomic.Pointer[webrtc.SessionDescription]
+
+	retry           atomic.Bool
+	sessionMu       sync.Mutex
+	sessionMuLocked atomic.Bool
+
+	ctxDeadline       atomic.Pointer[context.Context]
+	ctxDeadlineCancel atomic.Pointer[context.CancelFunc]
+
+	pctx context.Context
+}
+
+func (s *SessionDesc) LoadDeadlineContext() context.Context {
+	val := s.ctxDeadline.Load()
+	if val == nil {
+		return nil
+	}
+	return *val
+}
+
+func (s *SessionDesc) StoreDeadlineContext(ctx context.Context, cancel context.CancelFunc) {
+	s.ctxDeadline.Store(&ctx)
+	s.ctxDeadlineCancel.Store(&cancel)
+}
+
+func (s *SessionDesc) SetPendingDesc(desc *webrtc.SessionDescription) error {
+	log.Println("[SetPendingDesc] Try lock. Desc:", desc.Type)
+	locked := s.sessionMu.TryLock()
+loop:
+	for !locked {
+		deadline := s.LoadDeadlineContext()
+		if deadline != nil {
+			select {
+			case <-deadline.Done():
+				deadlineTime, _ := deadline.Deadline()
+				log.Printf("[SetPendingDesc] Deadline exhausted at %s. Desc:%s", deadlineTime, desc.Type)
+				s.sessionMu = sync.Mutex{}
+			default:
+			}
+		}
+
+		select {
+		case <-s.pctx.Done():
+			return ErrPeerConnectionClosed
+		default:
+			locked := s.sessionMu.TryLock()
+			if locked {
+				log.Println("[SetPendingDesc] Retry locked. Desc:", desc.Type)
+				break loop
+			}
+			time.Sleep(time.Millisecond * 200)
+			continue
+		}
+	}
+	log.Println("[SetPendingDesc] Already locked. Desc:", desc.Type)
+	s.sessionMuLocked.Store(true)
+
+	ctxDeadline, cancel := context.WithDeadline(s.pctx, time.Now().Add(time.Second))
+	s.StoreDeadlineContext(ctxDeadline, cancel)
+
+	s.pending.Store(desc)
+	s.retry.Store(true)
+
+	return nil
+}
+
+func (s *SessionDesc) Submit() error {
+	pending := s.pending.Load()
+
+	if pending == nil {
+		s.sessionMu.Unlock()
+		return ErrSubmitEmptyPendingSessionDesc
+	}
+
+	negotiated := s.pending.Swap(nil)
+
+	s.negotiated.Store(negotiated)
+	s.retry.Store(false)
+
+	if s.sessionMuLocked.Load() {
+		s.sessionMu.Unlock()
+	}
+	return nil
+}
+
+func (s *SessionDesc) GetPending() *webrtc.SessionDescription {
+	return s.pending.Load()
+}
+
+func NewSessionDesc(ctx context.Context) *SessionDesc {
+	return &SessionDesc{
+		pctx: ctx,
+	}
+}
 
 type PeerContext struct {
 	ctx    context.Context
 	cancel context.CancelCauseFunc
 
-	PeerID            protocol.PeerID
-	webrtc            *webrtc.API
-	peerConnection    *webrtc.PeerConnection
-	stats             *rtpstats.RtpStats
-	Signal            *Signal
-	Subscriber        *Subscriber
-	videoTrackContext *TrackContext
-	audioTrackContext *TrackContext
-	pipeAllocContext  *AllocatorsContext
-	spreader          trackSpreader
+	peerID           string
+	webrtc           *webrtc.API
+	peerConnection   *webrtc.PeerConnection
+	stats            *rtpstats.RtpStats
+	offer            *SessionDesc
+	Signal           *Signal
+	Subscriber       *Subscriber
+	pipeAllocContext *AllocatorsContext
+	spreader         trackSpreader
 
-	publishTracks   map[string]*ActiveTrackContext
+	publishTracks   map[string]*PublishTrackContext
 	publishTracksMu sync.Mutex
 }
 
@@ -39,8 +138,8 @@ type trackWritable interface {
 }
 
 type trackSpreader interface {
-	TrackDownToPeers(*TrackContext) error
-	TrackDownStopToPeers(context.Context, *TrackContext) error
+	TrackDownToPeers(*PeerContext, *TrackContext) error
+	TrackDownStopToPeers(*PeerContext, *TrackContext) error
 
 	SanitizePeerSenders(*PeerContext) error
 }
@@ -71,9 +170,10 @@ func (p *PeerContext) WatchTrack(track *ActiveTrackContext) {
 					log.Println("TrackContextMediaChange |  Media changed for not attached track. Not found active track")
 					continue
 				}
-				err := track.SwitchActiveTrackMedia(p.peerConnection)
+				err := track.SwitchActiveTrackMedia(p.webrtc, p.peerConnection)
 				log.Println("On switch active track media", err)
-				p.Signal.DispatchOffer()
+				p.spreader.SanitizePeerSenders(p)
+				// p.Signal.DispatchOffer()
 			}
 		}
 	}
@@ -92,7 +192,7 @@ func (p *PeerContext) WatchSubscriber(sub *Subscriber) {
 			switch evt := msg.Unbox().(type) {
 			case SubscriberTrackAttached:
 				go p.WatchTrack(evt.ActiveTrack())
-				p.Signal.DispatchOffer()
+				p.spreader.SanitizePeerSenders(p)
 			case SubscriberTrackDetached:
 				log.Println("Get detach event")
 			}
@@ -101,59 +201,59 @@ func (p *PeerContext) WatchSubscriber(sub *Subscriber) {
 }
 
 func (p *PeerContext) OnTrack() {
-	streamID := uuid.NewString()
+	var onTrackMu sync.Mutex
+	pubStreamID := uuid.NewString()
+	filter := FILTER_NONE
 
 	go p.Subscriber.WatchTrackAttach()
 	go p.Subscriber.WatchTrackDetach()
 
 	go p.WatchSubscriber(p.Subscriber)
 
-	p.peerConnection.OnTrack(func(t *webrtc.TrackRemote, recv *webrtc.RTPReceiver) {
-		filter := FILTER_NONE
+	onCloseTrack := func(err error, message ...any) {
+		onTrackMu.Unlock()
+		log.Println(message...)
+		err = errors.Join(err, ErrUnsupportedTrack)
+		_ = p.Signal.conn.WriteJSON(err)
+		_ = p.Close(err)
+	}
 
-		ack := p.Subscriber.Track(streamID, t, recv, filter)
+	p.peerConnection.OnTrack(func(t *webrtc.TrackRemote, recv *webrtc.RTPReceiver) {
+		onTrackMu.Lock()
+
+		log.Println("On track - ID:", t.ID(), "SSRC:", t.SSRC(), "StreamID:", t.StreamID())
+		tctx := p.Subscriber.Track(pubStreamID, t, recv, filter)
+
+		ptctx := NewPublishTrackContext(tctx)
+		p.publishTrack(ptctx)
+		defer p.publishTrackDelete(ptctx)
+
+		ack := p.Subscriber.AttachTrack(tctx)
 		select {
 		case <-p.Done():
+			onTrackMu.Unlock()
 			return
 		case err := <-ack.Result:
 			if err != nil {
-				log.Println("Unable attach track to subscriber. Err:", err)
-				err = errors.Join(err, ErrUnsupportedTrack)
-				_ = p.Signal.conn.WriteJSON(err)
-				_ = p.Close(err)
+				onCloseTrack(err, "[OnTrack] Unable attach track to subscriber. Err:", err)
 				return
 			}
 		}
 
-		activeTrack, exist := p.Subscriber.HasTrack(ack.TrackContext.ID())
-		if !exist {
-			err := ErrTrackNotFound
-			log.Println("Unable found subscriber track. Err:", err)
-			_ = p.Signal.conn.WriteJSON(err)
-			_ = p.Close(err)
+		// TODO: Remove this
+		TrackContextRegistry.Add(tctx)
+		defer TrackContextRegistry.Remove(tctx)
+
+		err := p.spreader.TrackDownToPeers(p, tctx)
+		if err != nil {
+			onCloseTrack(err, "[OnTrack] Unable down", tctx.ID(), "track. Err:", err)
 			return
 		}
+		defer p.spreader.TrackDownStopToPeers(p, tctx)
 
-		p.publishTrack(activeTrack)
+		onTrackMu.Unlock()
 
-		tctx := ack.TrackContext
-		var track trackWritable = tctx
-
-		p.Signal.DispatchOffer()
-
-		_ = TrackContextRegistry.Add(tctx)
-
-		go p.spreader.TrackDownToPeers(tctx)
-		go p.spreader.TrackDownStopToPeers(p.ctx, tctx)
-
-		go func() {
-			_ = p.spreader.SanitizePeerSenders(p)
-			// log.Println("track up for peer??", err)
-		}()
-
-		log.Println("On track", t.ID())
-
-		// log.Printf("%+v", p.Subscriber.tracks)
+		var track trackWritable = ack.TrackContext
 
 		for {
 			select {
@@ -165,11 +265,8 @@ func (p *PeerContext) OnTrack() {
 			pkt, _, err := t.ReadRTP()
 			if err != nil {
 				if errors.Is(err, io.EOF) {
-					// p.Subscriber.DeleteTrack(tctx.id)
-					p.publishTrackDelete(activeTrack)
-					TrackContextRegistry.Remove(tctx)
-					err = tctx.Close()
-					p.Signal.DispatchOffer()
+					log.Printf("[EOF] Publish sender track ID: %s", t.ID())
+					_ = tctx.Close()
 					return
 				}
 				continue
@@ -190,7 +287,7 @@ func (p *PeerContext) OnTrack() {
 	})
 }
 
-func (p *PeerContext) GetVideoTrackContext() (*ActiveTrackContext, error) {
+func (p *PeerContext) GetVideoPublishTrack() (*PublishTrackContext, error) {
 	p.publishTracksMu.Lock()
 	defer p.publishTracksMu.Unlock()
 
@@ -203,7 +300,7 @@ func (p *PeerContext) GetVideoTrackContext() (*ActiveTrackContext, error) {
 	return nil, ErrTrackNotFound
 }
 
-func (p *PeerContext) GetAudioTrackContext() (*ActiveTrackContext, error) {
+func (p *PeerContext) GetAudioPublishTrack() (*PublishTrackContext, error) {
 	p.publishTracksMu.Lock()
 	defer p.publishTracksMu.Unlock()
 
@@ -232,13 +329,13 @@ func (p *PeerContext) SwitchFilter(filterName string, mimeTypeName string) error
 		return errors.New("unknown mime type")
 	}
 
-	var track *ActiveTrackContext
+	var track *PublishTrackContext
 	err = nil
 	switch mimeType {
 	case MIME_TYPE_VIDEO:
-		track, err = p.GetVideoTrackContext()
+		track, err = p.GetVideoPublishTrack()
 	case MIME_TYPE_AUDIO:
-		track, err = p.GetAudioTrackContext()
+		track, err = p.GetAudioPublishTrack()
 	default:
 		return errors.New("unknown mime type")
 	}
@@ -313,7 +410,17 @@ func (p *PeerContext) CreateDataChannel(label string, options *webrtc.DataChanne
 }
 
 func (p *PeerContext) SetAnswer(desc webrtc.SessionDescription) error {
-	return p.peerConnection.SetRemoteDescription(desc)
+	err := p.peerConnection.SetRemoteDescription(desc)
+	if err != nil {
+		return err
+	}
+
+	err = p.offer.Submit()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (p *PeerContext) Offer() (offer string, err error) {
@@ -326,8 +433,25 @@ func (p *PeerContext) Offer() (offer string, err error) {
 		return "", err
 	}
 
-	if err = p.peerConnection.SetLocalDescription(offerSdp); err != nil {
+	if err = p.offer.SetPendingDesc(&offerSdp); err != nil {
 		return "", err
+	}
+
+	err = p.peerConnection.SetLocalDescription(offerSdp)
+	if err != nil {
+		switch e := err.(type) {
+		case *rtcerr.InvalidModificationError:
+			log.Println("GetPending old pending offer")
+			pendingSDP := p.offer.GetPending()
+			if pendingSDP == nil {
+				return "", err
+			}
+
+			offerSdp = *pendingSDP
+		default:
+			log.Println("default error for local desc", reflect.TypeOf(e))
+			return "", err
+		}
 	}
 
 	offerJson, err := json.Marshal(offerSdp)
@@ -348,16 +472,29 @@ func (p *PeerContext) Close(err error) error {
 	return p.peerConnection.Close()
 }
 
-func (p *PeerContext) AddTransceiver(kind []webrtc.RTPCodecType) error {
-	for _, t := range kind {
-		if _, err := p.peerConnection.AddTransceiverFromKind(t,
+// NOTE: Chrome 122 has introduced bug with sendonly transceiver,
+// to expect normal behavior I think better use shadow stream/tracks,
+// also I have sanitize logic to check publish tracks
+func (p *PeerContext) AddTransceiver(kinds []webrtc.RTPCodecType) error {
+	streamID := "inactive"
+
+	for _, t := range kinds {
+		trackID := uuid.NewString()
+
+		transiv, err := p.peerConnection.AddTransceiverFromKind(t,
 			webrtc.RTPTransceiverInit{
-				Direction: webrtc.RTPTransceiverDirectionRecvonly,
+				Direction: webrtc.RTPTransceiverDirectionSendrecv,
 			},
-		); err != nil {
+		)
+		if err != nil {
 			return err
 		}
+
+		senderTrackCodec := transiv.Sender().GetParameters().RTPParameters.Codecs[0]
+		track, err := webrtc.NewTrackLocalStaticRTP(senderTrackCodec.RTPCodecCapability, trackID, streamID)
+		transiv.Sender().ReplaceTrack(track)
 	}
+
 	return nil
 }
 
@@ -377,13 +514,17 @@ func (p *PeerContext) SetStats(stats *rtpstats.RtpStats) {
 	p.stats = stats
 }
 
-func (p *PeerContext) publishTrack(t *ActiveTrackContext) {
+func (p *PeerContext) PeerID() string {
+	return p.peerID
+}
+
+func (p *PeerContext) publishTrack(t *PublishTrackContext) {
 	p.publishTracksMu.Lock()
 	defer p.publishTracksMu.Unlock()
 	p.publishTracks[t.trackContext.ID()] = t
 }
 
-func (p *PeerContext) publishTrackDelete(t *ActiveTrackContext) {
+func (p *PeerContext) publishTrackDelete(t *PublishTrackContext) {
 	p.publishTracksMu.Lock()
 	defer p.publishTracksMu.Unlock()
 	delete(p.publishTracks, t.trackContext.ID())
@@ -393,7 +534,7 @@ func (p *PeerContext) newSubscriber() {
 	c, cancel := context.WithCancelCause(p.ctx)
 	subscriber := &Subscriber{
 		webrtc:           p.webrtc,
-		peerId:           p.PeerID,
+		peerId:           p.peerID,
 		peerConnection:   p.peerConnection,
 		pipeAllocContext: p.pipeAllocContext,
 		// loopback:       make(map[string]*LoopbackTrackContext),
@@ -435,12 +576,13 @@ type NewPeerContextParams struct {
 func NewPeerContext(params NewPeerContextParams) (*PeerContext, error) {
 	ctx, cancel := context.WithCancelCause(params.Context)
 	p := &PeerContext{
-		PeerID:           uuid.NewString(),
+		peerID:           uuid.NewString(),
 		ctx:              ctx,
 		cancel:           cancel,
 		webrtc:           params.API,
 		pipeAllocContext: params.PipeAllocContext,
-		publishTracks:    make(map[string]*ActiveTrackContext),
+		publishTracks:    make(map[string]*PublishTrackContext),
+		offer:            NewSessionDesc(ctx),
 		spreader:         params.Spreader,
 	}
 	if err := p.newPeerConnection(); err != nil {

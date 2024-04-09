@@ -235,19 +235,8 @@ func (t *TrackContext) GetTrackRemoteWriterSample() (TrackRemoteWriterSample, er
 // }
 
 func (t *TrackContext) Close() (err error) {
-	log.Println("close track", t.ID())
+	log.Println("[Close] track context close ID:", t.ID())
 	t.cancel()
-
-	select {
-	case <-t.Done():
-		log.Println("Valid close 1")
-	}
-
-	select {
-	case <-t.Done():
-		log.Println("Valid close 2")
-	}
-
 	return
 }
 
@@ -399,8 +388,8 @@ func (t *TrackContext) SetFilter(filter *Filter) error {
 	t.filter = filter
 	t.media = media
 	t.dispatch(NewTrackContextMessage(TrackContextMediaChange{
-        track: t,
-    }))
+		track: t,
+	}))
 	t.mediaMu.Unlock()
 	return nil
 }
@@ -516,41 +505,65 @@ func NewTrackContext(ctx context.Context, params NewTrackContextParams) *TrackCo
 
 type ActiveTrackContext struct {
 	trackContext *TrackContext
-	sender       atomic.Pointer[*webrtc.RTPSender]
+	sender       atomic.Pointer[webrtc.RTPSender]
+	transceiver  atomic.Pointer[webrtc.RTPTransceiver]
 }
 
 func (a *ActiveTrackContext) LoadSender() *webrtc.RTPSender {
-	return *a.sender.Load()
+	return a.sender.Load()
 }
 
 func (a *ActiveTrackContext) StoreSender(s *webrtc.RTPSender) {
-	a.sender.Store(&s)
+	a.sender.Store(s)
 }
 
-func (a *ActiveTrackContext) SwitchActiveTrackMedia(pc *webrtc.PeerConnection) error {
+func (a *ActiveTrackContext) LoadTransiver() *webrtc.RTPTransceiver {
+	return a.transceiver.Load()
+}
+
+func (a *ActiveTrackContext) StoreTransiver(transiv *webrtc.RTPTransceiver) {
+	a.transceiver.Store(transiv)
+}
+
+func (a *ActiveTrackContext) SwitchActiveTrackMedia(api *webrtc.API, pc *webrtc.PeerConnection) error {
 	sender := a.LoadSender()
 	if sender == nil {
 		return ErrSwitchActiveTrackNotFoundSender
 	}
 
-	if err := pc.RemoveTrack(sender); err != nil {
-		return err
+	transiv := a.LoadTransiver()
+	if transiv == nil {
+		return ErrSwitchActiveTrackNotFoundTransiv
 	}
 
-	var err error
-	sender = nil
-
-	sender, err = pc.AddTrack(a.trackContext.GetLocalTrack())
+	nextSender, err := api.NewRTPSender(a.trackContext.GetLocalTrack(), pc.SCTP().Transport())
 	if err != nil {
 		return err
 	}
 
+	_ = sender.Stop()
+
+	err = transiv.SetSender(nextSender, a.trackContext.GetLocalTrack())
+	log.Println("SetSender err:", err)
+
 	a.StoreSender(sender)
+
 	return nil
 }
 
-func NewActiveTrackContext(sender *webrtc.RTPSender, track *TrackContext) *ActiveTrackContext {
+func NewActiveTrackContext(transiv *webrtc.RTPTransceiver, sender *webrtc.RTPSender, track *TrackContext) *ActiveTrackContext {
 	a := &ActiveTrackContext{trackContext: track}
 	a.StoreSender(sender)
+	a.StoreTransiver(transiv)
 	return a
+}
+
+type PublishTrackContext struct {
+	trackContext *TrackContext
+}
+
+func NewPublishTrackContext(t *TrackContext) *PublishTrackContext {
+	return &PublishTrackContext{
+		trackContext: t,
+	}
 }

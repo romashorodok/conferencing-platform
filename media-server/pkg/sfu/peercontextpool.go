@@ -39,11 +39,11 @@ func (s *PeerContextPool) Add(sub *PeerContext) error {
 	s.subscriberMu.Lock()
 	defer s.subscriberMu.Unlock()
 
-	if _, exist := s.pool[sub.PeerID]; exist {
+	if _, exist := s.pool[sub.peerID]; exist {
 		return errors.New("Subscriber exist. Remove it first")
 	}
 
-	s.pool[sub.PeerID] = sub
+	s.pool[sub.peerID] = sub
 	return nil
 }
 
@@ -55,60 +55,15 @@ func (s *PeerContextPool) Remove(sub *PeerContext) (err error) {
 		return
 	}
 
-	if s, exist := s.pool[sub.PeerID]; exist {
+	if s, exist := s.pool[sub.peerID]; exist {
 		err = s.Close(ErrPeerConnectionClosed)
 	}
 
-	delete(s.pool, sub.PeerID)
+	delete(s.pool, sub.peerID)
 	return err
 }
 
 func (s *PeerContextPool) ForEachAsync(ctx context.Context, f func(*PeerContext) error) error {
-	g, ctx := errgroup.WithContext(ctx)
-
-	for _, peer := range s.pool {
-		peer := peer
-		g.Go(func() error {
-			return f(peer)
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (s *PeerContextPool) TrackDownToPeers(t *TrackContext) error {
-	g, _ := errgroup.WithContext(t.ctx)
-
-	for _, peer := range s.pool {
-		peer := peer
-		g.Go(func() error {
-			select {
-			case <-t.Done():
-				return t.DoneErr()
-			default:
-			}
-
-			ack := peer.Subscriber.AttachTrack(t)
-			if err := <-ack.Result; err != nil {
-				return err
-			}
-
-			// log.Printf("down track for peer: %s trackID: %s streamID: %s", peer.PeerID, t.ID(), t.StreamID())
-
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (s *PeerContextPool) TrackDownStopToPeers(ctx context.Context, t *TrackContext) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	for _, peer := range s.pool {
@@ -119,15 +74,7 @@ func (s *PeerContextPool) TrackDownStopToPeers(ctx context.Context, t *TrackCont
 				return ctx.Err()
 			default:
 			}
-
-			ack := peer.Subscriber.DetachTrack(t)
-			if err := <-ack.Result; err != nil {
-				return err
-			}
-
-			// log.Printf("stop down track for peer: %s trackID: %s streamID: %s", peer.PeerID, t.ID(), t.StreamID())
-
-			return nil
+			return f(peer)
 		})
 	}
 
@@ -135,6 +82,36 @@ func (s *PeerContextPool) TrackDownStopToPeers(ctx context.Context, t *TrackCont
 		return err
 	}
 	return nil
+}
+
+func (s *PeerContextPool) TrackDownToPeers(peerOrigin *PeerContext, t *TrackContext) error {
+	return s.ForEachAsync(t.ctx, func(peer *PeerContext) error {
+		if peer.PeerID() == peerOrigin.PeerID() {
+			return nil
+		}
+
+		ack := peer.Subscriber.AttachTrack(t)
+		if err := <-ack.Result; err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func (s *PeerContextPool) TrackDownStopToPeers(peerOrigin *PeerContext, t *TrackContext) error {
+	return s.ForEachAsync(t.ctx, func(peer *PeerContext) error {
+		if peer.PeerID() == peerOrigin.PeerID() {
+			return nil
+		}
+
+		ack := peer.Subscriber.DetachTrack(t)
+		if err := <-ack.Result; err != nil {
+			return err
+		}
+
+		return nil
+	})
 }
 
 func (s *PeerContextPool) SanitizePeerSenders(peerTarget *PeerContext) error {
@@ -213,7 +190,7 @@ retry:
 		}
 	}
 
-	log.Println("sanitized peer", peerTarget.PeerID)
+	log.Println("sanitized peer", peerTarget.peerID)
 	log.Println("sanitized senders", peerTarget.peerConnection.GetSenders())
 	for _, sender := range peerTarget.peerConnection.GetSenders() {
 		log.Printf("sanitized track: %s stream: %s", sender.Track().ID(), sender.Track().StreamID())

@@ -75,24 +75,27 @@ func (s *Subscriber) WatchTrackAttach() {
 		case ack := <-s.immediateAttachTrack:
 			s.attachTrackMu.Lock()
 			t := ack.TrackContext
-			// log.Println("attach track | search for", t.ID())
 
 			track, found := s.HasTrack(t.ID())
 			if !found {
-				sender, err := s.peerConnection.AddTrack(t.GetLocalTrack())
+				log.Printf("track %s not exists", t.ID())
+
+				transiv, err := s.peerConnection.AddTransceiverFromTrack(
+					t.GetLocalTrack(), webrtc.RTPTransceiverInit{
+						Direction: webrtc.RTPTransceiverDirectionSendonly,
+					},
+				)
 				if err != nil {
-					log.Printf("Ignore %s track for sub %s. Unable add track. Err:%s", t.ID(), s.peerId, err)
+					log.Printf("Ignore %s track for sub %s. Unable create transiver track. Err:%s", t.ID(), s.peerId, err)
 					ack.Result <- err
 					close(ack.Result)
 					s.attachTrackMu.Unlock()
 					continue
 				}
 
-				// TODO: Define place where it must be
-				track = NewActiveTrackContext(sender, t)
+				track = NewActiveTrackContext(transiv, transiv.Sender(), t)
 				s.MapStoreTrack(t.ID(), track)
-				// s.tracks.Store(t.ID(), track)
-				// s.tracks[t.ID()] = track
+
 				ack.Result <- nil
 				close(ack.Result)
 				s.dispatch(NewSubscriberMessage(SubscriberTrackAttached{
@@ -100,33 +103,28 @@ func (s *Subscriber) WatchTrackAttach() {
 				}))
 			} else {
 				log.Printf("track %s already exists", track.trackContext.ID())
-				sender := track.LoadSender()
+				// sender := track.LoadSender()
 
-				if sender != nil {
-					if err := s.peerConnection.RemoveTrack(sender); err != nil {
-						log.Println(err)
-						ack.Result <- err
-						close(ack.Result)
-						return
-					}
-				}
-
-				sender, err := s.peerConnection.AddTrack(track.trackContext.GetLocalTrack())
-				if err != nil {
-					log.Println(err)
-					ack.Result <- err
-					close(ack.Result)
-					return
-				}
-
-				track.StoreSender(sender)
-
+				// if sender != nil {
+				// 	_ = s.peerConnection.RemoveTrack(sender)
+				// }
+				//
+				// sender, err := s.peerConnection.AddTrack(track.trackContext.GetLocalTrack())
+				// if err != nil {
+				// 	log.Println(err)
+				// 	ack.Result <- err
+				// 	close(ack.Result)
+				// 	return
+				// }
+				//
+				// track.StoreSender(sender)
+				//
 				ack.Result <- nil
 				close(ack.Result)
-
-				s.dispatch(NewSubscriberMessage(SubscriberTrackAttached{
-					track: track,
-				}))
+				
+				// s.dispatch(NewSubscriberMessage(SubscriberTrackAttached{
+				// 	track: track,
+				// }))
 			}
 
 			s.attachTrackMu.Unlock()
@@ -183,7 +181,7 @@ func (s *Subscriber) WatchTrackDetach() {
 }
 
 // Create track context with default RTP sender
-func (s *Subscriber) Track(streamID string, t *webrtc.TrackRemote, recv *webrtc.RTPReceiver, filter *Filter) watchTrackAck {
+func (s *Subscriber) Track(streamID string, t *webrtc.TrackRemote, recv *webrtc.RTPReceiver, filter *Filter) *TrackContext {
 	s.tracksMu.Lock()
 	defer s.tracksMu.Unlock()
 
@@ -192,7 +190,7 @@ func (s *Subscriber) Track(streamID string, t *webrtc.TrackRemote, recv *webrtc.
 		id = uuid.NewString()
 	}
 
-	trackContext := NewTrackContext(s.ctx, NewTrackContextParams{
+	return NewTrackContext(s.ctx, NewTrackContextParams{
 		ID:          id,
 		StreamID:    streamID,
 		RID:         t.RID(),
@@ -209,7 +207,7 @@ func (s *Subscriber) Track(streamID string, t *webrtc.TrackRemote, recv *webrtc.
 		API:            s.webrtc,
 	})
 
-	return s.AttachTrack(trackContext)
+	// return s.AttachTrack(trackContext)
 }
 
 func (s *Subscriber) AttachTrack(t *TrackContext) watchTrackAck {
