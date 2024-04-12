@@ -56,11 +56,12 @@ func (f *Filter) GetName() string {
 type Pipeline interface {
 	Sink(frame []byte, timestamp time.Time, duration time.Duration) error
 
-	Start()
-	Close()
+	Start() error
+	Close() error
+	New(t *TrackContext) (Pipeline, error)
 }
 
-type Allocator = func(trackID string, mimeType string, clockRate uint32) Pipeline
+type Allocator = func(t *TrackContext) (Pipeline, error)
 
 type AllocatorsContext struct {
 	allocators map[*Filter]Allocator
@@ -94,13 +95,13 @@ type AllocateParams struct {
 	ClockRate uint32
 }
 
-func (ctx *AllocatorsContext) Allocate(params *AllocateParams) (Pipeline, error) {
-	alloc, ok := ctx.allocators[params.Filter]
+func (ctx *AllocatorsContext) Allocate(filter *Filter, t *TrackContext) (Pipeline, error) {
+	alloc, ok := ctx.allocators[filter]
 	if !ok {
 		return nil, ErrInvalidPipelineAllocatorName
 	}
 
-	return alloc(params.TrackID, params.MimeType, params.ClockRate), nil
+	return alloc(t)
 }
 
 func (ctx *AllocatorsContext) Filters() []*Filter {
@@ -113,6 +114,6 @@ func (ctx *AllocatorsContext) Filters() []*Filter {
 
 func NewAllocatorsContext() *AllocatorsContext {
 	return &AllocatorsContext{
-		make(map[*Filter]func(string, string, uint32) Pipeline),
+		make(map[*Filter]Allocator),
 	}
 }

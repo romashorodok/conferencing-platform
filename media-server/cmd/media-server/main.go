@@ -4,8 +4,9 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/romashorodok/conferencing-platform/media-server/cmd/media-server/cpppipelines"
 	"github.com/romashorodok/conferencing-platform/media-server/internal/ingress"
+	"github.com/romashorodok/conferencing-platform/media-server/internal/mcu"
+	"github.com/romashorodok/conferencing-platform/media-server/internal/pipeline"
 	"github.com/romashorodok/conferencing-platform/media-server/internal/room"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/protocol"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/service"
@@ -38,12 +39,17 @@ func CreateTestRoom(params CreateTestRoom_Params) {
 
 func NewPipelinesAllocatorsContext() *sfu.AllocatorsContext {
 	allocContext := sfu.NewAllocatorsContext()
-	allocContext.Register(sfu.FILTER_RTP_VP8_DUMMY, sfu.Allocator(cpppipelines.NewRtpVP8))
+
+	cannyFilter := &pipeline.CannyFilter{}
+
+	allocContext.Register(sfu.FILTER_RTP_VP8_DUMMY, cannyFilter.New)
+	// allocContext.Register(sfu.FILTER_RTP_VP8_DUMMY, sfu.Allocator(cpppipelines.NewRtpVP8))
 	return allocContext
 }
 
 func main() {
-	cpppipelines.GstreamerMainLoopSetup()
+	mcu.Setup()
+	mcu.Version()
 	go func() {
 		log.Println(http.ListenAndServe("localhost:6060", nil))
 	}()

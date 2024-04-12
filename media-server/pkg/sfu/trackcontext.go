@@ -265,6 +265,10 @@ func (t *TrackContext) StreamID() string {
 	return t.streamID
 }
 
+func (t *TrackContext) GetClockRate() uint32 {
+	return t.codecParams.ClockRate
+}
+
 func (t *TrackContext) SetFilter(filter *Filter) error {
 	// if t.rtp.Kind() != t.sample.Kind() {
 	// 	log.Panicf("different track mime type on context. RTP: %s SAMPLE: %s", t.rtp.Kind(), t.sample.Kind())
@@ -317,16 +321,21 @@ func (t *TrackContext) SetFilter(filter *Filter) error {
 
 		log.Printf("pipe alloc context %+v", t.pipeAllocContext)
 		// TODO: STOP the pipe if err exist
-		pipe, _ := t.pipeAllocContext.Allocate(&AllocateParams{
-			TrackID:   t.ID(),
-			Filter:    FILTER_RTP_VP8_DUMMY,
-			MimeType:  t.codecParams.MimeType,
-			ClockRate: t.codecParams.ClockRate,
-		})
+		// pipe, _ := t.pipeAllocContext.Allocate(&AllocateParams{
+		// 	TrackID:   t.ID(),
+		// 	Filter:    FILTER_RTP_VP8_DUMMY,
+		// 	MimeType:  t.codecParams.MimeType,
+		// 	ClockRate: t.codecParams.ClockRate,
+		// })
+
+		var pipe Pipeline
+		pipe, err = t.pipeAllocContext.Allocate(FILTER_RTP_VP8_DUMMY, t)
 		pipe.Start()
-		// if err != nil {
-		// 	return err
-		// }
+		if err != nil {
+			panic(err)
+			// return err
+		}
+
 		log.Printf("pipe: %+v", pipe)
 		_ = media.SetPipeline(pipe)
 	default:

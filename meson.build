@@ -17,6 +17,9 @@ project('media-server', 'c', 'cpp',
 cc = meson.get_compiler('c')
 std = cc.find_library('stdc++', required: true)
 
+media_server_mcu_proj = subproject('media-server-mcu')
+media_server_mcu_lib = media_server_mcu_proj.get_variable('media_server_mcu_lib')
+
 pipelines_proj = subproject('pipelines')
 rtpvp8_lib = pipelines_proj.get_variable('rtpvp8_lib')
 pipeline_lib = pipelines_proj.get_variable('pipelines_lib')

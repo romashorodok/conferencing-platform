@@ -27,3 +27,6 @@ opencv:
 
 download:
 	meson subprojects download gstreamer-1.0
+
+sdk:
+	sudo xcode-select -switch /Library/Developer/CommandLineTools
