@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"net/http"
 
 	"github.com/romashorodok/conferencing-platform/media-server/cmd/media-server/cpppipelines"
 	"github.com/romashorodok/conferencing-platform/media-server/internal/ingress"
@@ -11,6 +12,8 @@ import (
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/sfu"
 	globalprotocol "github.com/romashorodok/conferencing-platform/pkg/protocol"
 	"go.uber.org/fx"
+
+	_ "net/http/pprof"
 )
 
 type CreateTestRoom_Params struct {
@@ -41,6 +44,9 @@ func NewPipelinesAllocatorsContext() *sfu.AllocatorsContext {
 
 func main() {
 	cpppipelines.GstreamerMainLoopSetup()
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
 
 	fx.New(
 		fx.Provide(

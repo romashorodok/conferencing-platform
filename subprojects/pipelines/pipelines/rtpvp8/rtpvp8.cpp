@@ -124,9 +124,10 @@ RtpVP8::RtpVP8(char *trackID) : BasePipeline(trackID) {
   this->queueDummyTransform = gst_element_factory_make("queue", nullptr);
   g_object_set(queueDummyTransform, "max-size-bytes", guint(10485760 * 8),
                nullptr);
-  this->dummyTransform = gst_element_factory_make("visioncannyfilter", nullptr);
-  // this->dummyTransform = gst_element_factory_make("edgedetect", nullptr);
-  // this->dummyTransform = gst_element_factory_make("dummytransform", nullptr);
+  // this->dummyTransform = gst_element_factory_make("visioncannyfilter",
+  // nullptr); this->dummyTransform = gst_element_factory_make("edgedetect",
+  // nullptr); this->dummyTransform = gst_element_factory_make("dummytransform",
+  // nullptr);
   this->videoconvertOut = gst_element_factory_make("videoconvert", nullptr);
 
   this->queueVp8enc = gst_element_factory_make("queue", nullptr);
@@ -169,7 +170,8 @@ RtpVP8::RtpVP8(char *trackID) : BasePipeline(trackID) {
   if (!this->queueRtpSession || !this->rtpsession || !this->identity ||
       !this->queueRtpvp8depay || !this->rtpvp8depay || !this->queueVp8dec ||
       !this->vp8dec || !this->queueVideoconvertIn || !this->vp8enc ||
-      !this->queueDummyTransform || !this->dummyTransform ||
+      !this->queueDummyTransform ||
+      // !this->dummyTransform ||
       !this->videoconvertIn || !this->videoconvertOut || !this->queueVp8enc ||
       !this->cgoOnSampleSink) {
     g_printerr("Unable create the pipeline.\n");
@@ -181,14 +183,17 @@ RtpVP8::RtpVP8(char *trackID) : BasePipeline(trackID) {
       this->rtpsession, this->identity, this->queueRtpvp8depay,
       this->rtpvp8depay, this->queueVp8dec, this->vp8dec,
       this->queueVideoconvertIn, this->videoconvertIn,
-      this->queueDummyTransform, this->dummyTransform, this->videoconvertOut,
-      this->queueVp8enc, this->vp8enc, this->cgoOnSampleSink, nullptr);
+      this->queueDummyTransform,
+      // this->dummyTransform,
+    this->videoconvertOut, this->queueVp8enc,
+      this->vp8enc, this->cgoOnSampleSink, nullptr);
 
   gst_element_link_many(
       this->getAppsrc(), this->queueRtpSession, this->rtpsession,
       this->identity, this->queueRtpvp8depay, this->rtpvp8depay,
       this->queueVp8dec, this->vp8dec, this->queueVideoconvertIn,
-      this->videoconvertIn, this->queueDummyTransform, this->dummyTransform,
+      this->videoconvertIn, this->queueDummyTransform,
+    // this->dummyTransform,
       this->videoconvertOut, this->queueVp8enc, this->vp8enc,
       this->cgoOnSampleSink, nullptr);
 
