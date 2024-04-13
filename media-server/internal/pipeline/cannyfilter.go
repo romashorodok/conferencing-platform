@@ -83,8 +83,6 @@ func (c *CannyFilter) Start() error {
 	return nil
 }
 
-// NOTE: This not release C.GoBytes which produce HUGE memory leak. Because this runs as inline in for loop
-// I CANNOT FIX THIS BECAUSE I CANNOT PASS CALLBACK POINTER INTO C
 func writeSampleIfExist(t *sfu.TrackContext, sink *mcu.GstElement) {
 	gstSample, err := mcu.AppSinkPullSample(sink)
 	if err != nil {

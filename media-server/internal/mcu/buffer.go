@@ -11,7 +11,6 @@ import "C"
 
 import (
 	"errors"
-	"runtime"
 	"unsafe"
 )
 
@@ -21,6 +20,7 @@ type GstBuffer struct {
 
 func BufferNewWrapped(data []byte) (*GstBuffer, error) {
 	Cdata := (*C.gchar)(unsafe.Pointer(C.malloc(C.size_t(len(data)))))
+	defer C.free(unsafe.Pointer(Cdata))
 	C.bcopy(unsafe.Pointer(&data[0]), unsafe.Pointer(Cdata), C.size_t(len(data)))
 	CGstBuffer := C.MCU_gst_buffer_new_wrapped(Cdata, C.gsize(len(data)))
 	if CGstBuffer == nil {
@@ -46,10 +46,6 @@ type GstSample struct {
 	Height uint32
 }
 
-func (s *GstSample) Data() []byte {
-	return C.GoBytes(s.Buff, s.Size)
-}
-
 func (s *GstSample) Deinit() {
 	C.free(s.Buff)
 }
@@ -61,11 +57,11 @@ func AppSinkPullSample(element *GstElement) (sample *GstSample, err error) {
 	}
 	defer C.gst_sample_unref(CGstSample)
 
-	var width, height C.gint
-	CCaps := C.gst_sample_get_caps(CGstSample)
-	CCStruct := C.gst_caps_get_structure(CCaps, 0)
-	C.gst_structure_get_int(CCStruct, (*C.gchar)(unsafe.Pointer(C.CString("width"))), &width)
-	C.gst_structure_get_int(CCStruct, (*C.gchar)(unsafe.Pointer(C.CString("height"))), &height)
+	// var width, height C.gint
+	// CCaps := C.gst_sample_get_caps(CGstSample)
+	// CCStruct := C.gst_caps_get_structure(CCaps, 0)
+	// C.gst_structure_get_int(CCStruct, (*C.gchar)(unsafe.Pointer(C.CString("width"))), &width)
+	// C.gst_structure_get_int(CCStruct, (*C.gchar)(unsafe.Pointer(C.CString("height"))), &height)
 
 	CGstBuffer := C.gst_sample_get_buffer(CGstSample)
 	if CGstBuffer == nil {
@@ -78,18 +74,13 @@ func AppSinkPullSample(element *GstElement) (sample *GstSample, err error) {
 		&CCopy_size)
 
 	sample = &GstSample{
-		Buff:   unsafe.Pointer(CCopy),
-		Size:   C.int(CCopy_size),
-		Width:  uint32(width),
-		Height: uint32(height),
+		Buff: unsafe.Pointer(CCopy),
+		Size: C.int(CCopy_size),
+		// Width:  uint32(width),
+		// Height: uint32(height),
 	}
 
 	return sample, nil
-}
-
-func SampleUnref(s *GstSample) {
-	runtime.GC()
-	// C.free(s.CData)
 }
 
 func AppSinkIsEOS(element *GstElement) bool {
