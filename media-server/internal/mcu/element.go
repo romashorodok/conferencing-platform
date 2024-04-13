@@ -161,3 +161,11 @@ func BinAddMany(p *GstElement, elements ...*GstElement) {
 	}
 	return
 }
+
+func ObjectUnref(elem *GstElement) {
+	C.gst_object_unref(C.gpointer(elem.element))
+}
+
+func ElementDeinit(elem *GstElement) {
+	ObjectUnref(elem)
+}

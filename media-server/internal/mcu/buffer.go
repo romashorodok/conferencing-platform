@@ -11,6 +11,7 @@ import "C"
 
 import (
 	"errors"
+	"runtime"
 	"unsafe"
 )
 
@@ -39,19 +40,26 @@ func AppSrcPushBuffer(src *GstElement, buf *GstBuffer) error {
 }
 
 type GstSample struct {
-	CData  unsafe.Pointer
-	Data   []byte
+	Buff   unsafe.Pointer
+	Size   C.int
 	Width  uint32
 	Height uint32
 }
 
-func AppSinkPullSample(element *GstElement) (*GstSample, error) {
+func (s *GstSample) Data() []byte {
+	return C.GoBytes(s.Buff, s.Size)
+}
+
+func (s *GstSample) Deinit() {
+	C.free(s.Buff)
+}
+
+func AppSinkPullSample(element *GstElement) (sample *GstSample, err error) {
 	CGstSample := C.gst_app_sink_pull_sample((*C.GstAppSink)(unsafe.Pointer(element.element)))
 	if CGstSample == nil {
 		return nil, errors.New("could not pull a sample from appsink")
 	}
-	CGstSampleCopy := C.gst_sample_copy(CGstSample)
-	C.gst_sample_unref(CGstSample)
+	defer C.gst_sample_unref(CGstSample)
 
 	var width, height C.gint
 	CCaps := C.gst_sample_get_caps(CGstSample)
@@ -59,30 +67,29 @@ func AppSinkPullSample(element *GstElement) (*GstSample, error) {
 	C.gst_structure_get_int(CCStruct, (*C.gchar)(unsafe.Pointer(C.CString("width"))), &width)
 	C.gst_structure_get_int(CCStruct, (*C.gchar)(unsafe.Pointer(C.CString("height"))), &height)
 
-	// sample = &GstSample{
-	// 	C:      CGstSampleCopy,
-	// 	Width:  uint32(width),
-	// 	Height: uint32(height),
-	// }
-
-	CGstBuffer := C.gst_sample_get_buffer(CGstSampleCopy)
-	// C.gst_buffer_unref(CGstBuffer)
+	CGstBuffer := C.gst_sample_get_buffer(CGstSample)
+	if CGstBuffer == nil {
+		return nil, errors.New("could not get a sample buffer")
+	}
 
 	var CCopy C.gpointer
 	var CCopy_size C.gsize
-
 	C.gst_buffer_extract_dup(CGstBuffer, 0, C.gst_buffer_get_size(CGstBuffer), &CCopy,
 		&CCopy_size)
 
-	CData := unsafe.Pointer(CCopy)
-	sample := &GstSample{
-		CData:  CData,
-		Data:   C.GoBytes(CData, C.int(CCopy_size)),
+	sample = &GstSample{
+		Buff:   unsafe.Pointer(CCopy),
+		Size:   C.int(CCopy_size),
 		Width:  uint32(width),
 		Height: uint32(height),
 	}
 
 	return sample, nil
+}
+
+func SampleUnref(s *GstSample) {
+	runtime.GC()
+	// C.free(s.CData)
 }
 
 func AppSinkIsEOS(element *GstElement) bool {

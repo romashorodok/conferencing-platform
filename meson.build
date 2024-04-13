@@ -29,7 +29,7 @@ go = find_program('go')
 cmd_path = join_paths(meson.current_source_dir(), 'media-server/cmd/media-server')
 # pkg_config_path = join_paths(meson.current_build_dir(), 'meson-uninstalled')
 
-pkg_config_path = '@0@:@1@'.format(join_paths(meson.current_build_dir(), 'meson-uninstalled'),'/usr/local/Cellar/opencv/4.9.0_7/lib/pkgconfig')
+pkg_config_path = '@0@:@1@'.format(join_paths(meson.current_build_dir(), 'meson-uninstalled'),'/usr/local/Cellar/opencv/4.9.0_7/lib/pkgconfig/')
 
 uninstalled_env = environment()
 uninstalled_env.set('PKG_CONFIG_PATH', pkg_config_path)
