@@ -1,6 +1,7 @@
 #ifndef __VISION_CANNY_FILTER_H__
 #define __VISION_CANNY_FILTER_H__
 
+#include "glib/glib-object.h"
 #include <glib.h>
 #include <gst/gst.h>
 #include <gst/video/gstvideofilter.h>

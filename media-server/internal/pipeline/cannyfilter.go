@@ -200,11 +200,11 @@ func (c *CannyFilter) New(t *sfu.TrackContext) (sfu.Pipeline, error) {
 	}
 	filter.queueVisionCannyFilter = queueVisionCannyFilter
 
-	// visionCannyFilter, err := mcu.ElementFactoryMake("visioncannyfilter", "")
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// filter.visionCannyFilter = visionCannyFilter
+	visionCannyFilter, err := mcu.ElementFactoryMake("visioncannyfilter", "")
+	if err != nil {
+		return nil, err
+	}
+	filter.visionCannyFilter = visionCannyFilter
 
 	queueVideoconvertOut, err := mcu.ElementFactoryMake("queue", "")
 	if err != nil {
@@ -285,7 +285,7 @@ func (c *CannyFilter) New(t *sfu.TrackContext) (sfu.Pipeline, error) {
 		queueVideoconvertIn,
 		videoconvertIn,
 		queueVisionCannyFilter,
-		// visionCannyFilter,
+		visionCannyFilter,
 		queueVideoconvertOut,
 		videoconvertOut,
 		queueVP8enc,
@@ -329,23 +329,23 @@ func (c *CannyFilter) New(t *sfu.TrackContext) (sfu.Pipeline, error) {
 	if !succes {
 		panic("unable link GstElement")
 	}
-	// succes = mcu.ElementLink(queueVisionCannyFilter, visionCannyFilter)
-	// if !succes {
-	// 	panic("unable link GstElement")
-	// }
-	// succes = mcu.ElementLink(visionCannyFilter, queueVideoconvertOut)
-	// if !succes {
-	// 	panic("unable link GstElement")
-	// }
-
-	succes = mcu.ElementLink(queueVisionCannyFilter, videoconvertOut)
+	succes = mcu.ElementLink(queueVisionCannyFilter, visionCannyFilter)
 	if !succes {
 		panic("unable link GstElement")
 	}
-	// succes = mcu.ElementLink(queueVideoconvertOut, videoconvertOut)
+	succes = mcu.ElementLink(visionCannyFilter, queueVideoconvertOut)
+	if !succes {
+		panic("unable link GstElement")
+	}
+
+	// succes = mcu.ElementLink(queueVisionCannyFilter, videoconvertOut)
 	// if !succes {
 	// 	panic("unable link GstElement")
 	// }
+	succes = mcu.ElementLink(queueVideoconvertOut, videoconvertOut)
+	if !succes {
+		panic("unable link GstElement")
+	}
 	succes = mcu.ElementLink(videoconvertOut, queueVP8enc)
 	if !succes {
 		panic("unable link GstElement")
