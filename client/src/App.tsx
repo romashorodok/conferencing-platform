@@ -9,12 +9,13 @@ import { isChromiumBased } from './helpers'
 import { SignalContext } from './rtc/SignalProvider'
 import { EventEmitter } from 'events';
 import { SubscriberContext } from './rtc/SubscriberProvider'
-import { MediaStreamContext, setAudioMute, setVideoMute } from './rtc/MediaStreamProvider'
+import { MediaStreamContext, } from './rtc/MediaStreamProvider'
 import * as Popover from '@radix-ui/react-popover';
 import * as ScrollArea from '@radix-ui/react-scroll-area';
 import LoadingDots from './base/loading-dots'
 import { MEDIA_SERVER_WS } from './variables'
 import { MediaStreamContextReducer, RoomMediaStreamListContext } from './rtc/RoomMediaStreamListProvider'
+import { ControlsContext } from './rtc/ControlsProvider'
 
 export class Mutex {
   wait: Promise<void>;
@@ -352,25 +353,50 @@ export function useRoom() {
   return { join, roomMediaList, sinkMediaStream, videoFilterList, setVideoFilter }
 }
 
+export function VideoControl({ className }: { className?: string }) {
+  const { isVideoMuted, setVideoMuted } = useContext(ControlsContext)
+  return (
+    <button className={`${isVideoMuted ? 'bg-red-500' : 'bg-green-500'} cursor-pointer p-1 rounded-lg active:outline-none hover:outline-none focus:outline-none ${className}`} onClick={() => setVideoMuted(!isVideoMuted)}>
+      <img className={`w-[24px] h-[24px]`} src={cameraSvg} />
+    </button>
+  )
+}
+
+export function AudioControl({ className }: { className?: string, width?: number, height?: number }) {
+  const { isAudioMuted, setAudioMuted } = useContext(ControlsContext)
+  return (
+    <button className={`${isAudioMuted ? 'bg-red-500' : 'bg-green-500'} cursor-pointer p-1 rounded-lg active:outline-none hover:outline-none focus:outline-none ${className}`} onClick={() => setAudioMuted(!isAudioMuted)}>
+      <img className={`w-[24px] h-[24px]`} src={microphoneSvg} />
+    </button>
+  )
+}
+
+
+export function VideoControlLarge({ className }: { className?: string }) {
+  const { isVideoMuted, setVideoMuted } = useContext(ControlsContext)
+  return (
+    <button className={`${isVideoMuted ? 'bg-red-500' : 'bg-green-500'} cursor-pointer p-1 rounded-lg active:outline-none hover:outline-none focus:outline-none ${className}`} onClick={() => setVideoMuted(!isVideoMuted)}>
+      <img className={`w-[32px] h-[32px]`} src={cameraSvg} />
+    </button>
+  )
+}
+
+export function AudioControlLarge({ className }: { className?: string, width?: number, height?: number }) {
+  const { isAudioMuted, setAudioMuted } = useContext(ControlsContext)
+  return (
+    <button className={`${isAudioMuted ? 'bg-red-500' : 'bg-green-500'} cursor-pointer p-1 rounded-lg active:outline-none hover:outline-none focus:outline-none ${className}`} onClick={() => setAudioMuted(!isAudioMuted)}>
+      <img className={`w-[32px] h-[32px]`} src={microphoneSvg} />
+    </button>
+  )
+}
+
 export function CameraComponent() {
   const {
     mediaStream,
     mediaStreamReady,
   } = useContext(MediaStreamContext)
-  const [isVideoMuted, setVideoMuted] = useState<boolean>(mediaStream?.getVideoTracks()[0].enabled || true);
-  const [isAudioMuted, setAudioMuted] = useState<boolean>(mediaStream?.getAudioTracks()[0].enabled || true);
 
   const video = useRef<HTMLVideoElement>(null);
-
-  useEffect(() => {
-    if (mediaStream)
-      setVideoMute(mediaStream, isVideoMuted)
-  }, [isVideoMuted, mediaStream])
-
-  useEffect(() => {
-    if (mediaStream)
-      setAudioMute(mediaStream, isAudioMuted)
-  }, [isAudioMuted, mediaStream])
 
   useEffect(() => {
     if (mediaStream) {
@@ -379,17 +405,13 @@ export function CameraComponent() {
   }, [video, mediaStream])
 
   return (
-    <div className={`p-4`}>
+    <div className={`p-4 min-w-max`}>
       <div className={`flex relative w-[448px] h-[252px]`} >
         <div className={`${mediaStreamReady ? 'visible' : 'invisible'} z-10`}>
           <video ref={video} className={`w-[448px] h-[252px]`} autoPlay muted />
           <div className={`absolute left-[41%] bottom-[10%] flex gap-6`}>
-            <button className={`${isAudioMuted ? 'bg-red-500' : 'bg-green-500'} p-1 rounded-lg active:outline-none hover:outline-none focus:outline-none`} onClick={() => setAudioMuted(!isAudioMuted)}>
-              <img className={`w-[24px] h-[24px]`} src={microphoneSvg} />
-            </button>
-            <button className={`${isVideoMuted ? 'bg-red-500' : 'bg-green-500'} p-1 rounded-lg active:outline-none hover:outline-none focus:outline-none`} onClick={() => setVideoMuted(!isVideoMuted)}>
-              <img className={`w-[24px] h-[24px]`} src={cameraSvg} />
-            </button>
+            <AudioControl />
+            <VideoControl />
           </div>
         </div>
         {mediaStreamReady

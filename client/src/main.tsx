@@ -9,6 +9,7 @@ import RoomMediaStreamListProvider from './rtc/RoomMediaStreamListProvider.tsx'
 import { Outlet, RouterProvider, createBrowserRouter } from 'react-router-dom'
 import AppLayout from './AppLayout.tsx'
 import RoomPage from './routes/r/RoomPage.tsx'
+import ControlsProvider from './rtc/ControlsProvider.tsx'
 
 function Layout() {
   return (
@@ -17,9 +18,11 @@ function Layout() {
         <RoomMediaStreamListProvider>
           <SubscriberContextProvider>
             <RoomNotifierContextProvider>
-              <AppLayout>
-                <Outlet />
-              </AppLayout>
+              <ControlsProvider>
+                <AppLayout>
+                  <Outlet />
+                </AppLayout>
+              </ControlsProvider>
             </RoomNotifierContextProvider>
           </SubscriberContextProvider>
         </RoomMediaStreamListProvider>

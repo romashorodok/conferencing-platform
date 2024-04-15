@@ -184,6 +184,9 @@ function MediaStreamProvider({ children }: PropsWithChildren<{}>) {
     // const unlock = await mediaStreamMutex.lock()
     defaultMediaStream
       .then(async stream => {
+        setVideoMute(stream, true)
+        setAudioMute(stream, true)
+
         setMediaStream(stream);
         setMediaStreamReady(true);
         if (unlock)
