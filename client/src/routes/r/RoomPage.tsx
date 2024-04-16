@@ -149,7 +149,10 @@ function GridLayout({
   const { rows, columns } = useGridSize({ itemCount, width, height })
 
   return (
-    <div ref={gridRef} className={`grid grid-cols-${columns} grid-rows-${rows} gap-2`} >
+    <div ref={gridRef} className={`grid`} style={{
+      gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+      gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
+    }} >
       {children}
     </div>
   )
