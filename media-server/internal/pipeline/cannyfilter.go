@@ -98,6 +98,7 @@ func writeSampleIfExist(t *sfu.TrackContext, sink *mcu.GstElement) {
 	w, err := t.GetTrackRemoteWriterSample()
 	if err != nil {
 		log.Println("writer empty", err)
+        return
 	}
 
 	err = w.WriteRemote(media.Sample{

@@ -1,12 +1,11 @@
 import { PropsWithChildren, createRef, useContext, useEffect, useMemo, useState } from "react"
 import { useParams } from "react-router-dom"
-import { AudioControl, AudioControlLarge, CameraComponent, Filter, RoomStream, VideoControl, VideoControlLarge, useRoom } from "../../App"
+import { AudioControlLarge, CameraComponent, Filter, RoomStream, VideoControlLarge, useRoom } from "../../App"
 import { MediaStreamContext } from "../../rtc/MediaStreamProvider"
-import * as ContextMenu from '@radix-ui/react-context-menu';
+import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { useSize } from "../../utils/resize";
 import * as Dialog from '@radix-ui/react-dialog';
-import { PlusIcon } from "@radix-ui/react-icons";
-import { CloseIcon, SettingsIcon } from "../../AppLayout";
+import { CloseIcon, GalleryIcon, SettingsIcon, StopIcon, UserIcon } from "../../AppLayout";
 
 type videoFiltersMenuProps = {
   videoFilterList: Array<Filter>
@@ -25,29 +24,30 @@ function VideoFiltersMenu({ videoFilterList, setVideoFilter }: videoFiltersMenuP
   }
 
   return (
-    <ContextMenu.Root>
-      <ContextMenu.Trigger>Open video filters</ContextMenu.Trigger>
-      <ContextMenu.Portal>
-        <ContextMenu.Content className={`z-20`}>
-          <ContextMenu.Item className="ContextMenuItem">
-            Close
-          </ContextMenu.Item>
-          <ContextMenu.Separator />
+    <Dropdown.Root>
+      <Dropdown.Trigger asChild>
+        <button className="Button cursor-pointer px-2">
+          <GalleryIcon className="w-[32px] h-[32px]" />
+        </button>
+      </Dropdown.Trigger>
+      <Dropdown.Portal>
+        <Dropdown.Content sideOffset={10} className={`Frame FrameShadow p-3 z-50`}>
+          <Dropdown.Separator />
 
-          <ContextMenu.Label className="ContextMenuLabel">Select video filter</ContextMenu.Label>
-          <ContextMenu.RadioGroup value={selected} onValueChange={onChangeVideoFilter}>
+          <Dropdown.Label className="mb-5 ContextMenuLabel">Select video filter</Dropdown.Label>
+          <Dropdown.RadioGroup value={selected} onValueChange={onChangeVideoFilter}>
             {videoFilterList.map((filter, idx) => (
-              <ContextMenu.RadioItem className="ContextMenuRadioItem" value={idx.toString()} key={idx}>
-                <ContextMenu.ItemIndicator className="px-1">
+              <Dropdown.RadioItem className="Button my-2 p-2 cursor-pointer ContextMenuRadioItem" value={idx.toString()} key={idx}>
+                <Dropdown.ItemIndicator className="px-1">
                   Active
-                </ContextMenu.ItemIndicator>
+                </Dropdown.ItemIndicator>
                 {filter.name}
-              </ContextMenu.RadioItem>
+              </Dropdown.RadioItem>
             ))}
-          </ContextMenu.RadioGroup>
-        </ContextMenu.Content>
-      </ContextMenu.Portal>
-    </ContextMenu.Root>
+          </Dropdown.RadioGroup>
+        </Dropdown.Content>
+      </Dropdown.Portal>
+    </Dropdown.Root>
   )
 }
 
@@ -171,6 +171,9 @@ function SettingsDialog() {
           <Dialog.Title className="DialogTitle">User settings</Dialog.Title>
 
           <CameraComponent />
+          <div className={`flex flex-row justify-center gap-4 flex-3 p-4`}>
+            <FaceDetectionButtons />
+          </div>
 
           <Dialog.Close asChild>
             <button className="IconButton cursor-pointer" aria-label="Close" onClick={() => setOpen(false)}>
@@ -180,6 +183,22 @@ function SettingsDialog() {
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  )
+}
+
+export function FaceDetectionButtons() {
+  const { startFaceDetection, startNormal } = useContext(MediaStreamContext)
+
+  return (
+    <>
+      <button className="Button cursor-pointer px-2" onClick={() => startFaceDetection()}>
+        <UserIcon className="w-[32px] h-[32px]" />
+      </button>
+
+      <button className="Button cursor-pointer px-2" onClick={() => startNormal()}>
+        <StopIcon className="w-[32px] h-[32px]" />
+      </button>
+    </>
   )
 }
 
@@ -218,14 +237,11 @@ function RoomPage() {
       <div className={`flex flex-row justify-center gap-4 flex-3 p-4`}>
         <AudioControlLarge className={`ButtonShadow`} />
         <VideoControlLarge className={`ButtonShadow`} />
-        <SettingsDialog />
         <VideoFiltersMenu videoFilterList={videoFilterList} setVideoFilter={setVideoFilter} />
+        <SettingsDialog />
       </div>
     </div>
   )
 }
-
-// <VideoFiltersMenu videoFilterList={videoFilterList} setVideoFilter={setVideoFilter} />
-// <h1>{roomID}</h1>
 
 export default RoomPage
