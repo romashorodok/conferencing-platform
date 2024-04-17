@@ -149,7 +149,7 @@ function GridLayout({
   const { rows, columns } = useGridSize({ itemCount, width, height })
 
   return (
-    <div ref={gridRef} className={`grid`} style={{
+    <div ref={gridRef} className={`grid gap-6 min-h-full min-w-full`} style={{
       gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
       gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
     }} >
@@ -229,7 +229,7 @@ function RoomPage() {
   }, [roomID, onPageMountMediaStreamMutex])
 
   return (
-    <div className={`flex flex-col w-full h-full p-4`}>
+    <div className={`flex flex-col p-8 w-full h-full`}>
       <div className={`flex-1`}>
         <GridLayout itemCount={roomMediaItems.length}>
           {roomMediaItems.map(([id, { stream }]) => (

@@ -154,7 +154,7 @@ export default function({ children }: React.PropsWithChildren<{}>) {
       <section className={`flex-[1] flex overflow-hidden`}>
         {showNawbar(width) &&
           <RoomNav />}
-        <main className={`flex flex-col flex-[1] min-h-inherit overflow-scroll relative`}>
+        <main className={`flex flex-col flex-[1] overflow-scroll relative`}>
           {children}
         </main>
       </section>

@@ -458,10 +458,9 @@ function RoomParticipant({
   }, [video, mediaStream])
 
   return (
-    <div>
-      <div className={`flex relative w-[448px] h-[252px]`} >
-        <div className={`${isLoading ? 'invisible' : 'visible'} z-10`}>
-          <video ref={video} className={`w-[448px] h-[252px]`} />
+    <div className={`flex place-self-center place-content-center relative w-full h-full`} >
+        <div className={`${isLoading ? 'invisible' : 'visible'} contents`}>
+          <video ref={video} className={`z-10 w-5/6`} />
         </div>
         {isLoading
           ? (
@@ -471,8 +470,7 @@ function RoomParticipant({
             </div>
           )
           : null}
-        <span className={`z-0 absolute bg-black w-full h-full`}></span>
-      </div>
+        <span className={`z-0 absolute bg-black h-full w-full rounded-lg`}></span>
     </div>
   )
 }
@@ -561,7 +559,7 @@ function RoomStatContainer({
   show: boolean
 }>) {
   return (
-    <div className={`absolute top-[0] left-[0] z-30`}>
+    <div className={`absolute top-[10px] right-[10px] z-30`}>
       <Popover.Root open={show}>
         <Popover.Trigger asChild>
           {children}
@@ -632,7 +630,7 @@ export function RoomStream({
   }, [statList])
 
   return (
-    <div className={`relative`}>
+    <div className={`flex self-center relative`}>
       <RoomParticipant mediaStream={mediaStream} isLoading={isLoading} />
       <RoomStatContainer show={showStats} streamID={mediaStream.id} statList={statList} >
         <button onClick={() => setShowStats(!showStats)}>
