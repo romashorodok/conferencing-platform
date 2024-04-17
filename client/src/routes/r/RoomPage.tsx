@@ -229,7 +229,7 @@ function RoomPage() {
   }, [roomID, onPageMountMediaStreamMutex])
 
   return (
-    <div className={`flex flex-col p-8 w-full h-full`}>
+    <div className={`relative flex flex-col w-full h-full p-4`}>
       <div className={`flex-1`}>
         <GridLayout itemCount={roomMediaItems.length}>
           {roomMediaItems.map(([id, { stream }]) => (
@@ -237,7 +237,7 @@ function RoomPage() {
           ))}
         </GridLayout>
       </div>
-      <div className={`flex flex-row justify-center gap-4 flex-3 p-4`}>
+      <div className={`flex flex-row justify-center gap-4 flex-3 p-4 z-50`}>
         <AudioControlLarge className={`ButtonShadow`} />
         <VideoControlLarge className={`ButtonShadow`} />
         <VideoFiltersMenu videoFilterList={videoFilterList} setVideoFilter={setVideoFilter} />
@@ -246,5 +246,6 @@ function RoomPage() {
     </div>
   )
 }
+
 
 export default RoomPage

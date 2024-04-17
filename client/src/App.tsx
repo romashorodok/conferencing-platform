@@ -460,7 +460,7 @@ function RoomParticipant({
   return (
     <div className={`flex place-self-center place-content-center relative w-full h-full`} >
         <div className={`${isLoading ? 'invisible' : 'visible'} contents`}>
-          <video ref={video} className={`z-10 w-5/6`} />
+          <video ref={video} className={`z-10 w-5/6 h-5/6 object-cover place-self-center`} />
         </div>
         {isLoading
           ? (
@@ -630,7 +630,7 @@ export function RoomStream({
   }, [statList])
 
   return (
-    <div className={`flex self-center relative`}>
+    <div className={`flex self-center relative h-full`}>
       <RoomParticipant mediaStream={mediaStream} isLoading={isLoading} />
       <RoomStatContainer show={showStats} streamID={mediaStream.id} statList={statList} >
         <button onClick={() => setShowStats(!showStats)}>

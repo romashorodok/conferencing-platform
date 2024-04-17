@@ -145,16 +145,11 @@ export default function({ children }: React.PropsWithChildren<{}>) {
   return (
     <div ref={rootDivRef} className={`flex flex-col min-h-screen max-h-screen`}>
       <header>
-        <NavLink to="/">
-          <button>
-            Home
-          </button>
-        </NavLink>
       </header>
       <section className={`flex-[1] flex overflow-hidden`}>
         {showNawbar(width) &&
           <RoomNav />}
-        <main className={`flex flex-col flex-[1] overflow-scroll relative`}>
+        <main className={`flex flex-col flex-[1] max-h-full overflow-scroll relative`}>
           {children}
         </main>
       </section>
