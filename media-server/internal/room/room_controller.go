@@ -185,6 +185,8 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 		}
 	}()
 
+	go peerContext.SynchronizeOfferState()
+
 	message := &websocketMessage{}
 	for {
 		if err := w.ReadJSON(message); err != nil {
@@ -208,6 +210,17 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 			}
 		case "subscribe":
 			if err := peerContext.Signal.DispatchOffer(); err != nil {
+				return ctrl.wsError(w, err)
+			}
+
+		case "commit-offer-state":
+			var offerState sfu.CommitOfferStateMessage
+			if err := json.Unmarshal([]byte(message.Data), &offerState); err != nil {
+				return ctrl.wsError(w, err)
+			}
+
+			log.Println("Offer State recv,", offerState.StateHash)
+			if err := peerContext.CommitOfferState(offerState); err != nil {
 				return ctrl.wsError(w, err)
 			}
 

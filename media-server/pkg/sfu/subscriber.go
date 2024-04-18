@@ -27,8 +27,6 @@ func NewWatchTrackAck(t *TrackContext) watchTrackAck {
 type Subscriber struct {
 	webrtc         *webrtc.API
 	peerConnection *webrtc.PeerConnection
-	audioTrans     *webrtc.RTPTransceiver
-	videoTrans     *webrtc.RTPTransceiver
 
 	peerId string
 	sid    string
@@ -45,6 +43,7 @@ type Subscriber struct {
 	observersMu sync.Mutex
 
 	pipeAllocContext *AllocatorsContext
+	transceiverPool  *TransceiverPool
 
 	ctx    context.Context
 	cancel context.CancelCauseFunc
@@ -80,18 +79,58 @@ func (s *Subscriber) WatchTrackAttach() {
 			if !found {
 				log.Printf("track %s not exists", t.ID())
 
-				transiv, err := s.peerConnection.AddTransceiverFromTrack(
-					t.GetLocalTrack(), webrtc.RTPTransceiverInit{
-						Direction: webrtc.RTPTransceiverDirectionSendonly,
-					},
-				)
+				var err error
+				var transiv *webrtc.RTPTransceiver
+
+				transiv, err = s.transceiverPool.Get()
 				if err != nil {
-					log.Printf("Ignore %s track for sub %s. Unable create transiver track. Err:%s", t.ID(), s.peerId, err)
-					ack.Result <- err
-					close(ack.Result)
-					s.attachTrackMu.Unlock()
-					continue
+					switch err {
+					case ErrNotFoundTransceiver:
+						transiv, err = s.peerConnection.AddTransceiverFromTrack(
+							t.GetLocalTrack(), webrtc.RTPTransceiverInit{
+								Direction: webrtc.RTPTransceiverDirectionSendonly,
+							},
+						)
+						if err != nil {
+							log.Printf("Ignore %s track for sub %s. Unable create transiver track. Err:%s", t.ID(), s.peerId, err)
+							ack.Result <- err
+							close(ack.Result)
+							s.attachTrackMu.Unlock()
+							continue
+						}
+					default:
+						log.Printf("Ignore %s track for sub %s. Unable create transiver track. Err:%s", t.ID(), s.peerId, err)
+						ack.Result <- err
+						close(ack.Result)
+						s.attachTrackMu.Unlock()
+					}
+				} else {
+					sender, err := s.webrtc.NewRTPSender(t.GetLocalTrack(), s.peerConnection.SCTP().Transport())
+					if err != nil {
+						ack.Result <- err
+						close(ack.Result)
+						s.attachTrackMu.Unlock()
+					}
+
+					if err = transiv.SetSender(sender, t.GetLocalTrack()); err != nil {
+						ack.Result <- err
+						close(ack.Result)
+						s.attachTrackMu.Unlock()
+					}
 				}
+
+				// transiv, err := s.peerConnection.AddTransceiverFromTrack(
+				// 	t.GetLocalTrack(), webrtc.RTPTransceiverInit{
+				// 		Direction: webrtc.RTPTransceiverDirectionSendonly,
+				// 	},
+				// )
+				// if err != nil {
+				// 	log.Printf("Ignore %s track for sub %s. Unable create transiver track. Err:%s", t.ID(), s.peerId, err)
+				// 	ack.Result <- err
+				// 	close(ack.Result)
+				// 	s.attachTrackMu.Unlock()
+				// 	continue
+				// }
 
 				track = NewActiveTrackContext(transiv, transiv.Sender(), t)
 				s.MapStoreTrack(t.ID(), track)
@@ -121,7 +160,7 @@ func (s *Subscriber) WatchTrackAttach() {
 				//
 				ack.Result <- nil
 				close(ack.Result)
-				
+
 				// s.dispatch(NewSubscriberMessage(SubscriberTrackAttached{
 				// 	track: track,
 				// }))
@@ -168,6 +207,12 @@ func (s *Subscriber) WatchTrackDetach() {
 				ack.Result <- err
 			} else {
 				ack.Result <- nil
+			}
+
+			tranciv := track.LoadTransiver()
+			err = s.transceiverPool.Release(tranciv)
+			if err != nil {
+				log.Println("Unable release transiver")
 			}
 
 			s.dispatch(NewSubscriberMessage(SubscriberTrackDetached{
@@ -245,6 +290,11 @@ func (s *Subscriber) DeleteTrack(t *ActiveTrackContext) error {
 		return fmt.Errorf("Track not exist. Unable delete %s", id)
 	}
 	s.MapDeleteTrack(id)
+
+	err := s.transceiverPool.Release(t.LoadTransiver())
+	if err != nil {
+		log.Println("[SubscriberDeleteTrack] Unable release transciever")
+	}
 
 	return s.peerConnection.RemoveTrack(track.(*ActiveTrackContext).LoadSender())
 }

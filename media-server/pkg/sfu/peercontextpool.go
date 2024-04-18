@@ -3,10 +3,8 @@ package sfu
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"sync"
-	"time"
 
 	"github.com/pion/webrtc/v4"
 	"golang.org/x/sync/errgroup"
@@ -114,91 +112,120 @@ func (s *PeerContextPool) TrackDownStopToPeers(peerOrigin *PeerContext, t *Track
 	})
 }
 
-func (s *PeerContextPool) SanitizePeerSenders(peerTarget *PeerContext) error {
-	attachedSenders := make(map[string]*webrtc.RTPSender)
+type UnattachedSender struct {
+	track *PublishTrackContext
+}
+
+type OptionalSender interface {
+	*webrtc.RTPSender | UnattachedSender
+}
+
+type OptionalSenderBox[F any] struct {
+	value F
+}
+
+func (b *OptionalSenderBox[F]) Untype() OptionalSenderBox[any] {
+	return OptionalSenderBox[any]{
+		value: b.value,
+	}
+}
+
+func NewOptionalSenderBox[F *webrtc.RTPSender | UnattachedSender](val F) OptionalSenderBox[F] {
+	return OptionalSenderBox[F]{
+		value: val,
+	}
+}
+
+func (s *PeerContextPool) PeerPublishingSenders(peerTarget *PeerContext) map[string]OptionalSenderBox[any] {
+	pubSenders := make(map[string]OptionalSenderBox[any])
 
 	for _, peer := range s.pool {
-		for tID, pubTrack := range peer.publishTracks {
-			if track, exist := peerTarget.Subscriber.HasTrack(tID); exist {
+		for pubTrackID, pubTrack := range peer.publishTracks {
+			if track, exist := peerTarget.Subscriber.HasTrack(pubTrackID); exist {
 				sender := track.LoadSender()
 				if sender != nil {
-					attachedSenders[track.trackContext.ID()] = sender
+					box := NewOptionalSenderBox(sender)
+					pubSenders[track.trackContext.ID()] = box.Untype()
 					continue
 				}
 			}
 
-			ack := peerTarget.Subscriber.AttachTrack(pubTrack.trackContext)
-			if err := <-ack.Result; err != nil {
-				return err
-			}
-
-			activeTrack, exist := peerTarget.Subscriber.HasTrack(pubTrack.trackContext.ID())
-			if !exist {
-				return errors.Join(ErrTrackNotFound, fmt.Errorf("track %s must exist", pubTrack.trackContext.ID()))
-			}
-
-			attachedSenders[activeTrack.trackContext.ID()] = activeTrack.LoadSender()
+			box := NewOptionalSenderBox(UnattachedSender{
+				track: pubTrack,
+			})
+			pubSenders[pubTrackID] = box.Untype()
 		}
 	}
 
-	senderReplacerRetry := func() bool {
-		for _, sender := range peerTarget.peerConnection.GetSenders() {
-			if sender == nil {
-				return true
-			}
+	return pubSenders
+}
 
-			track := sender.Track()
-			if track == nil {
-				return true
-			}
-			tID := track.ID()
+func (s *PeerContextPool) removeUnpublishSenders(peerTarget *PeerContext, pubSenders map[string]OptionalSenderBox[any]) {
+	// log.Println(
+	// 	"senders:", peerTarget.peerConnection.GetSenders(),
+	// 	"pubSenders:", pubSenders,
+	// )
 
-			s, exist := attachedSenders[tID]
-			if !exist {
+	for _, existingSender := range peerTarget.peerConnection.GetSenders() {
+		if existingSender == nil {
+			continue
+		}
+
+		track := existingSender.Track()
+		if track == nil {
+			continue
+		}
+		tID := track.ID()
+
+		s, exist := pubSenders[tID]
+		if !exist {
+			_ = peerTarget.peerConnection.RemoveTrack(existingSender)
+			return
+		}
+
+		switch sender := s.value.(type) {
+		case *webrtc.RTPSender:
+			if sender != existingSender {
 				_ = peerTarget.peerConnection.RemoveTrack(sender)
 				continue
 			}
-
-			if s != sender {
-				_ = peerTarget.peerConnection.RemoveTrack(s)
-				continue
-			}
-		}
-
-		return false
-	}
-
-	sleep := func() { time.Sleep(time.Millisecond * 100) }
-
-retry:
-	for attempt := 0; ; attempt++ {
-		log.Println("[Sanitize] attempt", attempt)
-		select {
-		case <-peerTarget.Done():
-			return ErrPeerConnectionClosed
+		case UnattachedSender:
+			continue
 		default:
+			log.Println("[removeUnpublishSenders] What is it???", sender)
+			panic("[removeUnpublishSenders] Unreachable state")
 		}
+	}
+}
 
-		if attempt >= 25 {
-			sleep()
-			log.Println("[Sanitize] retry attempt")
-			goto retry
-		}
+func (s *PeerContextPool) SanitizePeerSenders(peerTarget *PeerContext) error {
+	senders := s.PeerPublishingSenders(peerTarget)
 
-		if !senderReplacerRetry() {
-			break
+	s.removeUnpublishSenders(peerTarget, senders)
+
+	for _, sender := range senders {
+		switch s := sender.value.(type) {
+		case *webrtc.RTPSender:
+			// NOTE: here may be bug if sender not attached but i assume that all ok
+			continue
+		case UnattachedSender:
+			log.Println("Block attached senders")
+			t := s.track.trackContext
+			ack := peerTarget.Subscriber.AttachTrack(t)
+			if err := <-ack.Result; err != nil {
+				return err
+			}
+			log.Println("Unblock attached senders")
+		default:
+			log.Println("[SanitizePeerSenders] What is it???", s)
+			panic("[SanitizePeerSenders] Unreachable state")
 		}
 	}
 
-	log.Println("sanitized peer", peerTarget.peerID)
-	log.Println("sanitized senders", peerTarget.peerConnection.GetSenders())
-	for _, sender := range peerTarget.peerConnection.GetSenders() {
-		log.Printf("sanitized track: %s stream: %s", sender.Track().ID(), sender.Track().StreamID())
-	}
+	// log.Println("[SanitizePeerSenders] sanitized peer", peerTarget.peerID)
+	// log.Println("[SanitizePeerSenders] sanitized senders", peerTarget.peerConnection.GetSenders())
 
-	_ = peerTarget.Signal.DispatchOffer()
-
-	return nil
+	return peerTarget.Signal.DispatchOffer()
 }
 
 var _ trackSpreader = (*PeerContextPool)(nil)

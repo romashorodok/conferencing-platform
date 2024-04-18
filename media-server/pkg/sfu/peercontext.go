@@ -2,8 +2,10 @@ package sfu
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"reflect"
@@ -17,9 +19,18 @@ import (
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/rtpstats"
 )
 
+func generateHash(data string) string {
+	hash := sha256.New()
+	hash.Write([]byte(data))
+	return fmt.Sprintf("%x", hash.Sum(nil))
+}
+
 type SessionDesc struct {
 	negotiated atomic.Pointer[webrtc.SessionDescription]
 	pending    atomic.Pointer[webrtc.SessionDescription]
+
+	negotiatedHash atomic.Value /* string|nil */
+	pendingHash    atomic.Value /* string|nil */
 
 	retry           atomic.Bool
 	sessionMu       sync.Mutex
@@ -79,22 +90,39 @@ loop:
 	ctxDeadline, cancel := context.WithDeadline(s.pctx, time.Now().Add(time.Second))
 	s.StoreDeadlineContext(ctxDeadline, cancel)
 
+	s.pendingHash.Store(generateHash(desc.SDP))
 	s.pending.Store(desc)
 	s.retry.Store(true)
 
 	return nil
 }
 
-func (s *SessionDesc) Submit() error {
+var EmptyOfferHash string = ""
+
+func (s *SessionDesc) Submit(offerHash string) error {
 	pending := s.pending.Load()
 
 	if pending == nil {
-		s.sessionMu.Unlock()
+		log.Println("[SessionDescSubmit] Pending nil")
 		return ErrSubmitEmptyPendingSessionDesc
 	}
 
-	negotiated := s.pending.Swap(nil)
+	if offerHash == "" {
+		log.Println("[SessionDescSubmit] offerHash empty")
+		return ErrSubmitOfferStateEmpty
+	}
 
+	swapped := s.pendingHash.CompareAndSwap(offerHash, EmptyOfferHash)
+	if !swapped {
+		log.Println("[SessionDescSubmit] Unable unlock state")
+		return ErrSubmitOfferRaceCondition
+	}
+
+	//
+
+	s.negotiatedHash.Store(offerHash)
+
+	negotiated := s.pending.Swap(nil)
 	s.negotiated.Store(negotiated)
 	s.retry.Store(false)
 
@@ -106,6 +134,10 @@ func (s *SessionDesc) Submit() error {
 
 func (s *SessionDesc) GetPending() *webrtc.SessionDescription {
 	return s.pending.Load()
+}
+
+func (s *SessionDesc) GetRetry() bool {
+	return s.retry.Load()
 }
 
 func NewSessionDesc(ctx context.Context) *SessionDesc {
@@ -126,6 +158,7 @@ type PeerContext struct {
 	Signal           *Signal
 	Subscriber       *Subscriber
 	pipeAllocContext *AllocatorsContext
+	transceiverPool  *TransceiverPool
 	spreader         trackSpreader
 
 	publishTracks   map[string]*PublishTrackContext
@@ -142,6 +175,7 @@ type trackSpreader interface {
 	TrackDownStopToPeers(*PeerContext, *TrackContext) error
 
 	SanitizePeerSenders(*PeerContext) error
+	PeerPublishingSenders(peerTarget *PeerContext) map[string]OptionalSenderBox[any]
 }
 
 func (p *PeerContext) WatchTrack(track *ActiveTrackContext) {
@@ -156,7 +190,9 @@ func (p *PeerContext) WatchTrack(track *ActiveTrackContext) {
 		case <-t.Done():
 			// log.Println("Watch track context doen for", t.ID())
 			p.Subscriber.DeleteTrack(track)
-			p.Signal.DispatchOffer()
+			p.spreader.SanitizePeerSenders(p)
+
+			// p.Signal.DispatchOffer()
 			// ack := p.Subscriber.DetachTrack(t)
 			// err := <-ack.Result
 			// log.Println("track context done for err", err)
@@ -191,9 +227,11 @@ func (p *PeerContext) WatchSubscriber(sub *Subscriber) {
 		case msg := <-bus:
 			switch evt := msg.Unbox().(type) {
 			case SubscriberTrackAttached:
+				log.Println("Track attached", evt.track.trackContext.ID())
 				go p.WatchTrack(evt.ActiveTrack())
 				p.spreader.SanitizePeerSenders(p)
 			case SubscriberTrackDetached:
+				p.spreader.SanitizePeerSenders(p)
 				log.Println("Get detach event")
 			}
 		}
@@ -405,6 +443,32 @@ func (p *PeerContext) Filters() *filtersResult {
 	}
 }
 
+func (p *PeerContext) SynchronizeOfferState() {
+	ticker := time.NewTicker(time.Second * 4)
+	for {
+		select {
+		case <-p.Done():
+			return
+		case <-ticker.C:
+			senders := p.spreader.PeerPublishingSenders(p)
+			// log.Printf("[SynchronizeOfferState] try sanitize %s", p.PeerID())
+			// log.Printf("PeerPublishingSenders: %+v", senders)
+			// log.Printf("GetSenders: %+v", p.peerConnection.GetSenders())
+			for _, sender := range senders {
+				switch s := sender.value.(type) {
+				case UnattachedSender:
+					log.Printf("[SynchronizeOfferState] found unattached sender. track ID: %s", s.track.trackContext.ID())
+					ack := p.Subscriber.AttachTrack(s.track.trackContext)
+					if err := <-ack.Result; err != nil {
+						log.Println("attach track err", err)
+					}
+				default:
+				}
+			}
+		}
+	}
+}
+
 func (p *PeerContext) CreateDataChannel(label string, options *webrtc.DataChannelInit) (*webrtc.DataChannel, error) {
 	return p.peerConnection.CreateDataChannel(label, options)
 }
@@ -415,12 +479,21 @@ func (p *PeerContext) SetAnswer(desc webrtc.SessionDescription) error {
 		return err
 	}
 
-	err = p.offer.Submit()
-	if err != nil {
-		return err
-	}
-
 	return nil
+}
+
+type CommitOfferStateMessage struct {
+	StateHash string `json:"state_hash"`
+}
+
+func (p *PeerContext) CommitOfferState(msg CommitOfferStateMessage) error {
+	return p.offer.Submit(msg.StateHash)
+}
+
+type offerResult struct {
+	webrtc.SessionDescription
+
+	HashState string `json:"hash_state"`
 }
 
 func (p *PeerContext) Offer() (offer string, err error) {
@@ -454,7 +527,10 @@ func (p *PeerContext) Offer() (offer string, err error) {
 		}
 	}
 
-	offerJson, err := json.Marshal(offerSdp)
+	offerJson, err := json.Marshal(offerResult{
+		SessionDescription: offerSdp,
+		HashState:          p.offer.pendingHash.Load().(string),
+	})
 	if err != nil {
 		return "", err
 	}
@@ -533,16 +609,15 @@ func (p *PeerContext) publishTrackDelete(t *PublishTrackContext) {
 func (p *PeerContext) newSubscriber() {
 	c, cancel := context.WithCancelCause(p.ctx)
 	subscriber := &Subscriber{
-		webrtc:           p.webrtc,
-		peerId:           p.peerID,
-		peerConnection:   p.peerConnection,
-		pipeAllocContext: p.pipeAllocContext,
-		// loopback:       make(map[string]*LoopbackTrackContext),
+		webrtc:               p.webrtc,
+		peerId:               p.peerID,
+		peerConnection:       p.peerConnection,
+		pipeAllocContext:     p.pipeAllocContext,
+		transceiverPool:      p.transceiverPool,
 		immediateAttachTrack: make(chan watchTrackAck),
 		immediateDetachTrack: make(chan watchTrackAck),
-
-		ctx:    c,
-		cancel: cancel,
+		ctx:                  c,
+		cancel:               cancel,
 	}
 	obs := make([]chan SubscriberMessage[any], 0)
 	subscriber.observers.Store(&obs)
@@ -583,6 +658,7 @@ func NewPeerContext(params NewPeerContextParams) (*PeerContext, error) {
 		pipeAllocContext: params.PipeAllocContext,
 		publishTracks:    make(map[string]*PublishTrackContext),
 		offer:            NewSessionDesc(ctx),
+		transceiverPool:  NewTransceiverPool(),
 		spreader:         params.Spreader,
 	}
 	if err := p.newPeerConnection(); err != nil {

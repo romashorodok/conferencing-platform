@@ -28,4 +28,9 @@ var (
 
 	// ** SessionDesc
 	ErrSubmitEmptyPendingSessionDesc = errors.New("don't have pending session desc to submit. ")
+	ErrSubmitOfferStateEmpty         = errors.New("passed empty offer hash")
+	ErrSubmitOfferRaceCondition      = errors.New("submit offer race condition found")
+
+	// ** TransceiverPool
+	ErrNotFoundTransceiver = errors.New("not found transceiver")
 )

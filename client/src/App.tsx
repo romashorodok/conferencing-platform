@@ -203,10 +203,21 @@ export class Signal extends EventEmitter {
       data: JSON.stringify(sd)
     }))
   }
+
+  async commitOfferState(state_hash: string) {
+    this.ws?.send(JSON.stringify({
+      event: "commit-offer-state",
+      data: JSON.stringify({
+        state_hash,
+      }),
+    }))
+  }
 }
 
-export type Filter = { name: string, mimeType: string, enabled: boolean };
+export type Filter = { name: string, mimeType: string, enabled: boolean }
 type FilterMessage = { audio: Array<Filter>, video: Array<Filter> }
+
+type OfferMessage = { hash_state: string } & RTCSessionDescription;
 
 export function useRoom() {
   const { mediaStream } = useContext(MediaStreamContext)
@@ -298,14 +309,22 @@ export function useRoom() {
       await signal.onConnect.wait
 
       signal.on(SignalEvent.Offer, async (sd: string) => {
-        await peerContext.setRemoteDescription(JSON.parse(sd))
+        const offer: OfferMessage = JSON.parse(sd)
+        await peerContext.setRemoteDescription(offer)
+        console.info("[OfferMessage] Recv offer state.", offer.hash_state)
         let answer = await peerContext.createAnswer()
         if (!answer || !answer.sdp) {
           throw new Error("undefined subscriber an answer, when the negotiate")
         }
         answer.sdp = answer.sdp.replace("useinbandfec=1", "useinbandfec=1;stereo=1")
         peerContext.setLocalDescription(answer)
-        signal.answer(answer)
+
+        try {
+          await signal.answer(answer)
+          await signal.commitOfferState(offer.hash_state)
+        } catch {
+          console.error("[SignalEvent.Offer] Unable send and commit answer")
+        }
       })
 
       peerContext.on(PeerConnectionEvent.OnICECandidate, (e: RTCIceCandidate) => {
