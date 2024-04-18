@@ -459,18 +459,18 @@ function RoomParticipant({
 
   return (
     <div className={`flex place-self-center place-content-center relative w-full h-full`} >
-        <div className={`${isLoading ? 'invisible' : 'visible'} contents`}>
-          <video ref={video} className={`z-10 w-5/6 h-5/6 object-cover place-self-center`} />
-        </div>
-        {isLoading
-          ? (
-            <div className={`absolute left-[43%] bottom-[10%] z-10`} >
-              <p>Loading</p>
-              <LoadingDots absolute={false} />
-            </div>
-          )
-          : null}
-        <span className={`z-0 absolute bg-black h-full w-full rounded-lg`}></span>
+      <div className={`${isLoading ? 'invisible' : 'visible'} contents`}>
+        <video ref={video} className={`z-10 w-5/6 h-5/6 object-cover place-self-center`} />
+      </div>
+      {isLoading
+        ? (
+          <div className={`absolute left-[43%] bottom-[10%] z-10`} >
+            <p>Loading</p>
+            <LoadingDots absolute={false} />
+          </div>
+        )
+        : null}
+      <span className={`z-0 absolute bg-black h-full w-full rounded-lg`}></span>
     </div>
   )
 }
@@ -658,9 +658,6 @@ function Room() {
 
 function App() {
   const { startFaceDetection, startNormal } = useContext(MediaStreamContext)
-  // const { join } = useRoom()
-  // const room = useRoom()
-
   const [count, setCount] = useState(0)
 
   useEffect(() => console.log(count), [count])
