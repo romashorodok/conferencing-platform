@@ -1,5 +1,6 @@
 .DS_Store
 examples
+client
 gen
 venv
 spec
@@ -18,5 +19,4 @@ subprojects/vpx
 subprojects/libffi.wrap
 subprojects/vpx.wrap
 subprojects/opencv
-subprojects/orc.wrap
 build

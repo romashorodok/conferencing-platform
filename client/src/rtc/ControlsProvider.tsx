@@ -18,8 +18,8 @@ export const ControlsContext = createContext<ControlsContextProvider>({
 function ControlsProvider({ children }: PropsWithChildren<{}>) {
   const { mediaStream } = useContext(MediaStreamContext)
 
-  const [isVideoMuted, setVideoMuted] = useState<boolean>(!mediaStream?.getVideoTracks()[0].enabled || false);
-  const [isAudioMuted, setAudioMuted] = useState<boolean>(!mediaStream?.getAudioTracks()[0].enabled || false);
+  const [isVideoMuted, setVideoMuted] = useState<boolean>(!mediaStream?.getVideoTracks()[0]?.enabled || false);
+  const [isAudioMuted, setAudioMuted] = useState<boolean>(!mediaStream?.getAudioTracks()[0]?.enabled || false);
 
   useEffect(() => {
     if (mediaStream)
