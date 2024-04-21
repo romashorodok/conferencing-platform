@@ -37,3 +37,23 @@ RUN apk add --no-cache libopencv_core libopencv_imgproc libintl
 COPY --from=media-server /app/media-server/media-server /app/media-server
 # libopencv_aruco libopencv_calib3d libopencv_core libopencv_dnn libopencv_face libopencv_features2d libopencv_flann libopencv_highgui libopencv_imgcodecs libopencv_imgproc libopencv_ml libopencv_objdetect libopencv_optflow libopencv_photo libopencv_plot libopencv_shape libopencv_stitching libopencv_superres libopencv_tracking libopencv_video libopencv_videoio libopencv_videostab libopencv_ximgproc
 # ENTRYPOINT [ "/app/media-server" ]
+
+FROM nginx:alpine3.19 as gateway
+RUN apk add --no-cache openssl bash envsubst certbot certbot-nginx
+
+# TODO: standalone js build
+RUN apk add --no-cache nodejs npm
+WORKDIR /app
+
+COPY ./client client
+WORKDIR /app/client
+COPY .env.local .env
+RUN npm install
+RUN npm run build
+RUN rm -fr node_modules
+
+WORKDIR /app
+COPY nginx.templ.conf .
+COPY certs.sh .
+
+CMD ["bash", "-c", "chmod +x /app/certs.sh && source /app/certs.sh && echo $SSL_CERTIFICATE && envsubst '$DOMAIN $SSL_CERTIFICATE $SSL_CERTIFICATE_KEY' < /app/nginx.templ.conf > /app/nginx.conf && cat /app/nginx.conf && nginx -c /app/nginx.conf -g 'daemon off;'"]

@@ -1,0 +1,39 @@
+networks:
+  bridge:
+
+services:
+  media-server:
+    build:
+      target: media-server-bin
+    command:
+      - /app/media-server
+    networks:
+      - bridge
+    develop:
+      watch:
+        - action: rebuild
+          path: media-server
+          target: /app/media-server
+        - action: rebuild
+          path: pkg
+          target: /app/pkg
+  gateway:
+    build:
+      target: gateway
+    ports:
+      - 443:443
+    networks:
+      - bridge
+    env_file:
+      - path: .env.local
+        required: true
+    volumes:
+        - /etc/letsencrypt
+    develop:
+      watch:
+        - action: sync+restart
+          path: certs.sh
+          target: /app/certs.sh
+        - action: sync+restart
+          path: nginx.templ.conf
+          target: /app/nginx.templ.conf

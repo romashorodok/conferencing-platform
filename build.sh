@@ -9,7 +9,7 @@ pkg_config_cflags=$(PKG_CONFIG_PATH=$pkg_config_path pkg-config --cflags $libs)
 pkg_config_ldflags=$(PKG_CONFIG_PATH=$pkg_config_path pkg-config --libs $libs)
 
 cgo_cflags="$pkg_config_cflags"
-cgo_ldflags="$pkg_config_ldflags -lstdc++"
+cgo_ldflags="$pkg_config_ldflags -lstdc++ -w -s"
 
 media_server_cmd="$pwd/media-server/cmd/media-server"
 
