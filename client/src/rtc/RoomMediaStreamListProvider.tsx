@@ -20,7 +20,10 @@ type RoomMediaStreamListContextType = {
   setRoomMediaStream: Dispatch<RoomMediaTrackAction>
 }
 
-export const RoomMediaStreamListContext = createContext<RoomMediaStreamListContextType>(null!)
+export const RoomMediaStreamListContext = createContext<RoomMediaStreamListContextType>({
+  roomMediaStreamList: null!,
+  setRoomMediaStream: null!,
+})
 
 
 function RoomMediaStreamListProvider({ children }: PropsWithChildren<{}>) {

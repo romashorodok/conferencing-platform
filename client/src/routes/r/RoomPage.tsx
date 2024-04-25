@@ -212,21 +212,21 @@ type PageData = {
 function RoomPage() {
   const { roomID } = useParams<PageData>()
   const { join, roomMediaList, videoFilterList, setVideoFilter } = useRoom()
-  const { onPageMountMediaStreamMutex } = useContext(MediaStreamContext)
+  const { onPageMountMediaStreamMutex, mediaStream } = useContext(MediaStreamContext)
 
   const roomMediaItems = useMemo(() => Object.entries(roomMediaList), [roomMediaList])
 
   useEffect(() => {
-    if (!roomID || !onPageMountMediaStreamMutex)
+    if (!roomID || !onPageMountMediaStreamMutex || !mediaStream)
       return
     console.log(onPageMountMediaStreamMutex);
 
     (async () => {
       await onPageMountMediaStreamMutex.wait
-      join({ roomID })
+      join({ roomID, mediaStream })
       console.log(onPageMountMediaStreamMutex)
     })()
-  }, [roomID, onPageMountMediaStreamMutex])
+  }, [roomID, onPageMountMediaStreamMutex, mediaStream])
 
   return (
     <div className={`relative flex flex-col w-full h-full p-4`}>

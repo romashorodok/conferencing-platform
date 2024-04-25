@@ -286,7 +286,7 @@ export function useRoom() {
   // |> setremotedescription: server
   //
   // After that, peers must send their ice candidates
-  const join = useCallback(async ({ roomID }: { roomID: string }) => {
+  const join = useCallback(async ({ roomID, mediaStream }: { roomID: string, mediaStream: MediaStream }) => {
     if (isSameRoom(roomID))
       return
 
@@ -322,6 +322,14 @@ export function useRoom() {
         try {
           await signal.answer(answer)
           await signal.commitOfferState(offer.hash_state)
+          console.log("START MediaStream::")
+          peerContext.peerConnection?.getSenders().forEach(s => {
+            console.log("peercontext tracks§:", s.track)
+          })
+          mediaStream.getTracks().forEach(t => {
+            console.log("media stream tracks:", t)
+          })
+          console.log("END MediaStream::")
         } catch {
           console.error("[SignalEvent.Offer] Unable send and commit answer")
         }
