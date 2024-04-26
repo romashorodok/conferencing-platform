@@ -20,13 +20,14 @@ services:
   gateway:
     build:
       target: gateway
+      args:
+        DOMAIN: localhost
+        VITE_MEDIA_SERVER: http://localhost/api
+        VITE_MEDIA_SERVER_WS: wss://localhost/api
     ports:
       - 443:443
     networks:
       - bridge
-    env_file:
-      - path: .env.local
-        required: true
     volumes:
         - /etc/letsencrypt
     develop:

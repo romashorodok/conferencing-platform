@@ -1,3 +1,4 @@
+.dockercache
 .DS_Store
 client/node_modules
 examples

@@ -47,13 +47,21 @@ WORKDIR /app
 
 COPY ./client client
 WORKDIR /app/client
-COPY .env.local .env
 RUN npm install
+
+ARG DOMAIN=localhost
+ARG VITE_MEDIA_SERVER=http://localhost/api
+ARG VITE_MEDIA_SERVER_WS=wss://localhost/api
+
+ENV DOMAIN=${DOMAIN}
+ENV VITE_MEDIA_SERVER=${VITE_MEDIA_SERVER}
+ENV VITE_MEDIA_SERVER_WS=${VITE_MEDIA_SERVER_WS}
+
 RUN npm run build
 RUN rm -fr node_modules
 
 WORKDIR /app
 COPY nginx.templ.conf .
-COPY certs.sh .
+COPY certs.sh . 
 
 CMD ["bash", "-c", "chmod +x /app/certs.sh && source /app/certs.sh && echo $SSL_CERTIFICATE && envsubst '$DOMAIN $SSL_CERTIFICATE $SSL_CERTIFICATE_KEY' < /app/nginx.templ.conf > /app/nginx.conf && cat /app/nginx.conf && nginx -c /app/nginx.conf -g 'daemon off;'"]
