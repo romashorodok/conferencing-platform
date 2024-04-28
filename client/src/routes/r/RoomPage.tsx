@@ -212,21 +212,22 @@ type PageData = {
 function RoomPage() {
   const { roomID } = useParams<PageData>()
   const { join, roomMediaList, videoFilterList, setVideoFilter } = useRoom()
-  const { onPageMountMediaStreamMutex, mediaStream } = useContext(MediaStreamContext)
+  const { onPageMountMediaStreamMutex } = useContext(MediaStreamContext)
 
   const roomMediaItems = useMemo(() => Object.entries(roomMediaList), [roomMediaList])
 
   useEffect(() => {
-    if (!roomID || !onPageMountMediaStreamMutex || !mediaStream)
+    if (!roomID || !onPageMountMediaStreamMutex)
       return
     console.log(onPageMountMediaStreamMutex);
 
     (async () => {
       await onPageMountMediaStreamMutex.wait
-      join({ roomID, mediaStream })
+      // Provide here the media stream is wrong approach. it will be trigger the join
+      join({ roomID })
       console.log(onPageMountMediaStreamMutex)
     })()
-  }, [roomID, onPageMountMediaStreamMutex, mediaStream])
+  }, [roomID, onPageMountMediaStreamMutex])
 
   return (
     <div className={`relative flex flex-col w-full h-full p-4`}>

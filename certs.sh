@@ -15,7 +15,10 @@ if [ "$DOMAIN" = "localhost" ] || [ -z "$DOMAIN" ]; then
     SSL_CERTIFICATE=$(pwd)/cert.pem
     SSL_CERTIFICATE_KEY=$(pwd)/key.pem
 else
-    echo "TODO: create certs by certboot"
+    certbot certonly --standalone -d $DOMAIN --register-unsafely-without-email --agree-tos
+
+    SSL_CERTIFICATE=/etc/letsencrypt/live/$DOMAIN/fullchain.pem
+    SSL_CERTIFICATE_KEY=/etc/letsencrypt/live/$DOMAIN/privkey.pem
 fi;
 
 export SSL_CERTIFICATE SSL_CERTIFICATE_KEY

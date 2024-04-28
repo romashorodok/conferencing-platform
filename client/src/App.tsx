@@ -13,7 +13,7 @@ import { MediaStreamContext, } from './rtc/MediaStreamProvider'
 import * as Popover from '@radix-ui/react-popover';
 import * as ScrollArea from '@radix-ui/react-scroll-area';
 import LoadingDots from './base/loading-dots'
-import { MEDIA_SERVER_WS } from './variables'
+import { MEDIA_SERVER_STUN, MEDIA_SERVER_WS } from './variables'
 import { MediaStreamContextReducer, RoomMediaStreamListContext } from './rtc/RoomMediaStreamListProvider'
 import { ControlsContext } from './rtc/ControlsProvider'
 
@@ -286,13 +286,25 @@ export function useRoom() {
   // |> setremotedescription: server
   //
   // After that, peers must send their ice candidates
-  const join = useCallback(async ({ roomID, mediaStream }: { roomID: string, mediaStream: MediaStream }) => {
+  const join = useCallback(async ({ roomID }: { roomID: string }) => {
     if (isSameRoom(roomID))
       return
 
     const signalRoomUrl = `${MEDIA_SERVER_WS}/rooms/${roomID}`
     const signal = new Signal(signalRoomUrl)
-    const peerContext = new RTCEngine()
+    let peerContext: RTCEngine
+    console.log("STUN", MEDIA_SERVER_STUN)
+    if (MEDIA_SERVER_STUN !== undefined && MEDIA_SERVER_STUN !== "") {
+      peerContext = new RTCEngine({
+        iceServers: [
+          {
+            urls: MEDIA_SERVER_STUN,
+          },
+        ]
+      })
+    } else {
+      peerContext = new RTCEngine()
+    }
 
     try {
       signal.on(SignalEvent.Filters, (payload: string) => {
@@ -307,6 +319,12 @@ export function useRoom() {
 
       signal.connect()
       await signal.onConnect.wait
+
+      signal.on(SignalEvent.TrickleIceCandidate, (payload: string) => {
+        const candidate = JSON.parse(payload) as RTCIceCandidate
+        console.log("[Room ICE] Set ice candidate", candidate)
+        peerContext.peerConnection?.addIceCandidate(candidate)
+      })
 
       signal.on(SignalEvent.Offer, async (sd: string) => {
         const offer: OfferMessage = JSON.parse(sd)
@@ -326,26 +344,23 @@ export function useRoom() {
           peerContext.peerConnection?.getSenders().forEach(s => {
             console.log("peercontext tracks§:", s.track)
           })
-          mediaStream.getTracks().forEach(t => {
-            console.log("media stream tracks:", t)
-          })
           console.log("END MediaStream::")
         } catch {
           console.error("[SignalEvent.Offer] Unable send and commit answer")
         }
       })
 
-      peerContext.on(PeerConnectionEvent.OnICECandidate, (e: RTCIceCandidate) => {
-        if (!e.candidate) {
-          return
-        }
-
-        console.log("[Room Signal] send ice candidate", e.candidate)
-        signal.ws?.send(JSON.stringify({
-          event: SignalEvent.TrickleIceCandidate,
-          data: JSON.stringify(e.candidate)
-        }))
-      })
+      // peerContext.on(PeerConnectionEvent.OnICECandidate, (e: RTCIceCandidate) => {
+      //   if (!e.candidate) {
+      //     return
+      //   }
+      //
+      //   console.log("[Room Signal] send ice candidate", e.candidate)
+      //   signal.ws?.send(JSON.stringify({
+      //     event: SignalEvent.TrickleIceCandidate,
+      //     data: JSON.stringify(e.candidate)
+      //   }))
+      // })
 
       peerContext.peerConnection!.ontrack = (evt) => {
         console.log("on track", evt)

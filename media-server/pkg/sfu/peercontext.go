@@ -542,6 +542,10 @@ func (p *PeerContext) SetCandidate(candidate webrtc.ICECandidateInit) error {
 	return p.peerConnection.AddICECandidate(candidate)
 }
 
+func (p *PeerContext) OnICECandidate(f func(*webrtc.ICECandidate)) {
+	p.peerConnection.OnICECandidate(f)
+}
+
 func (p *PeerContext) Close(err error) error {
 	// TODO: May be leak of not closed/removed resources
 	p.cancel(err)

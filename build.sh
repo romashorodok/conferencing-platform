@@ -19,4 +19,4 @@ PKG_CONFIG_PATH=$pkg_config_path \
     CGO_ENABLED=1 \
     CGO_CFLAGS="$cgo_cflags" \
     CGO_LDFLAGS="$cgo_ldflags" \
-    go build -o media-server $media_server_cmd
+    go build -o bin/media-server $media_server_cmd

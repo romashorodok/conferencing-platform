@@ -20,21 +20,30 @@ COPY Makefile .
 RUN make setup
 RUN meson compile -C builddir
 
-COPY pkg pkg
-COPY media-server media-server
+RUN --mount=type=cache,target=/go \
+    --mount=type=bind,source=./pkg/go.mod,target=go.mod \
+    go mod download -x
 
-RUN go work init
-RUN go work use pkg
-RUN go work use media-server
+RUN --mount=type=cache,target=/go \
+    --mount=type=bind,source=./media-server/go.mod,target=go.mod \
+    go mod download -x
 
 COPY build.sh .
 RUN chmod +x build.sh
 
-RUN ./build.sh
+RUN go env -w GOCACHE=/go-cache
+
+RUN --mount=type=cache,target=/go \
+    --mount=type=cache,target=/go-cache \
+    --mount=type=bind,source=./go.work,target=go.work \
+    --mount=type=bind,source=./go.mod,target=go.mod \
+    --mount=type=bind,source=./pkg,target=pkg \
+    --mount=type=bind,source=./media-server,target=media-server,readonly \
+    ./build.sh
 
 FROM alpine:3.19.1 as media-server-bin
 RUN apk add --no-cache libopencv_core libopencv_imgproc libintl
-COPY --from=media-server /app/media-server/media-server /app/media-server
+COPY --from=media-server /app/bin/media-server /app/media-server
 # libopencv_aruco libopencv_calib3d libopencv_core libopencv_dnn libopencv_face libopencv_features2d libopencv_flann libopencv_highgui libopencv_imgcodecs libopencv_imgproc libopencv_ml libopencv_objdetect libopencv_optflow libopencv_photo libopencv_plot libopencv_shape libopencv_stitching libopencv_superres libopencv_tracking libopencv_video libopencv_videoio libopencv_videostab libopencv_ximgproc
 # ENTRYPOINT [ "/app/media-server" ]
 
@@ -52,10 +61,12 @@ RUN npm install
 ARG DOMAIN=localhost
 ARG VITE_MEDIA_SERVER=http://localhost/api
 ARG VITE_MEDIA_SERVER_WS=wss://localhost/api
+ARG VITE_MEDIA_SERVER_STUN=stun:stun.l.google.com:19302
 
 ENV DOMAIN=${DOMAIN}
 ENV VITE_MEDIA_SERVER=${VITE_MEDIA_SERVER}
 ENV VITE_MEDIA_SERVER_WS=${VITE_MEDIA_SERVER_WS}
+ENV VITE_MEDIA_SERVER_STUN=${VITE_MEDIA_SERVER_STUN}
 
 RUN npm run build
 RUN rm -fr node_modules

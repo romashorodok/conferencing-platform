@@ -90,7 +90,7 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 
 	conn, err := ctrl.upgrader.Upgrade(ctx.Response().Writer, ctx.Request(), nil)
 	if err != nil {
-		ctrl.logger.Error(fmt.Sprintf("Unable upgrade request %s", ctx.Request()))
+		ctrl.logger.Error(fmt.Sprintf("Unable upgrade request %+v", ctx.Request()))
 		return err
 	}
 
@@ -124,6 +124,25 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 	}
 
 	peerContext.OnTrack()
+	peerContext.OnICECandidate(func(c *webrtc.ICECandidate) {
+		if c == nil {
+			return
+		}
+
+		candidate, lErr := json.Marshal(c.ToJSON())
+		if lErr != nil {
+			log.Println(lErr)
+			return
+		}
+
+		if err := w.WriteJSON(websocketMessage{
+			Event: "candidate",
+			Data:  string(candidate),
+		}); err != nil {
+			ctrl.wsError(w, err)
+			return
+		}
+	})
 
 	peerContext.OnConnectionStateChange(func(p webrtc.PeerConnectionState) {
 		switch p {

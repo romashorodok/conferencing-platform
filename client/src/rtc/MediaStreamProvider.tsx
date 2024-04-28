@@ -48,12 +48,19 @@ async function videoScaleCanvas(streamPromise: Promise<MediaStream>, width: numb
 
 let videoStream: Promise<MediaStream>
 if (isChromiumBased()) {
-  videoStream = navigator.mediaDevices.getUserMedia({
+  // NOTE: Selecting video may be work only on localhost
+  const inbound = navigator.mediaDevices.getUserMedia({
     video: {
-      width: { exact: 320 },
-      height: { exact: 180 }
+      width: 320,
+      height: 180,
     },
+    // video: true,
+    // video: {
+    //   width: { exact: 320 },
+    //   height: { exact: 180 }
+    // },
   })
+  videoStream = inbound
 } else if (isFireFox()) {
   // NOTE: Firefox not support low resolutions
   // This lead that I need high performance, when I do the filter of the stream
@@ -213,6 +220,23 @@ function MediaStreamProvider({ children }: PropsWithChildren<{}>) {
   useEffect(() => {
     const mu = new Mutex()
     const unlock = mu.lock()
+
+    if (!navigator.mediaDevices?.enumerateDevices) {
+      console.log("enumerateDevices() not supported.");
+    } else {
+      // List cameras and microphones.
+      navigator.mediaDevices
+        .enumerateDevices()
+        .then((devices) => {
+          devices.forEach((device) => {
+            console.log(`${device.kind}: ${device.label} id = ${device.deviceId}`);
+          });
+        })
+        .catch((err) => {
+          console.error(`${err.name}: ${err.message}`);
+        });
+    }
+
     startNormal(unlock)
     setOnPageMountMediaStreamMutex(mu)
   }, [])

@@ -7,6 +7,15 @@ services:
       target: media-server-bin
     command:
       - /app/media-server
+    ports:
+      - 8080:8080
+      - target: 3478
+        published: 3478
+        protocol: udp
+        mode: host
+    # environment:
+    # Must be addr of your VPS
+    #     WEBRTC_ONE_TO_NAT_PUBLIC_IP: 0.0.0.0
     networks:
       - bridge
     develop:
@@ -22,10 +31,12 @@ services:
       target: gateway
       args:
         DOMAIN: localhost
-        VITE_MEDIA_SERVER: http://localhost/api
+        VITE_MEDIA_SERVER: https://localhost/api
         VITE_MEDIA_SERVER_WS: wss://localhost/api
+        # VITE_MEDIA_SERVER_STUN: stun:stun.l.google.com:19302
     ports:
       - 443:443
+      - 80:80
     networks:
       - bridge
     volumes:
