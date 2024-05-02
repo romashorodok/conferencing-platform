@@ -478,7 +478,6 @@ func (p *PeerContext) SetAnswer(desc webrtc.SessionDescription) error {
 	if err != nil {
 		return err
 	}
-
 	return nil
 }
 

@@ -329,6 +329,7 @@ export function useRoom() {
       signal.on(SignalEvent.Offer, async (sd: string) => {
         const offer: OfferMessage = JSON.parse(sd)
         await peerContext.setRemoteDescription(offer)
+
         console.info("[OfferMessage] Recv offer state.", offer.hash_state)
         let answer = await peerContext.createAnswer()
         if (!answer || !answer.sdp) {
@@ -340,11 +341,6 @@ export function useRoom() {
         try {
           await signal.answer(answer)
           await signal.commitOfferState(offer.hash_state)
-          console.log("START MediaStream::")
-          peerContext.peerConnection?.getSenders().forEach(s => {
-            console.log("peercontext tracks§:", s.track)
-          })
-          console.log("END MediaStream::")
         } catch {
           console.error("[SignalEvent.Offer] Unable send and commit answer")
         }

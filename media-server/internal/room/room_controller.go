@@ -161,20 +161,18 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 		}
 	})
 
-	// TODO: make on each peer track context done and wait when track is done make signal with removing the track from each peer side
-	// NOTE: this fix the bug when track is removed and on client side it's on remote description
-	// go func() {
-	// 	ticker := time.NewTicker(time.Second * 10)
-	// 	for {
-	// 		select {
-	// 		case <-peerContext.Done():
-	// 			return
-	// 		case <-ticker.C:
-	// 			roomCtx.peerContextPool.SanitizePeerSenders(peerContext)
-	// 			log.Println("dispatch offer")
-	// 		}
-	// 	}
-	// }()
+	go func() {
+		ticker := time.NewTicker(time.Second * 10)
+		for {
+			select {
+			case <-peerContext.Done():
+				return
+			case <-ticker.C:
+				roomCtx.peerContextPool.SanitizePeerSenders(peerContext)
+				log.Println("dispatch offer")
+			}
+		}
+	}()
 
 	if _, err := peerContext.CreateDataChannel("_negotiation", nil); err != nil {
 		return ctrl.wsError(w, err)

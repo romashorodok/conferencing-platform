@@ -234,7 +234,9 @@ function RoomPage() {
       <div className={`flex-1`}>
         <GridLayout itemCount={roomMediaItems.length}>
           {roomMediaItems.map(([id, { stream }]) => (
-            <RoomStream key={id} mediaStream={stream} />
+            id === 'inactive'
+              ? null
+              : <RoomStream key={id} mediaStream={stream} />
           ))}
         </GridLayout>
       </div>
