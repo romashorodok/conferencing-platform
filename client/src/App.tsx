@@ -350,17 +350,17 @@ export function useRoom() {
         }
       })
 
-      // peerContext.on(PeerConnectionEvent.OnICECandidate, (e: RTCIceCandidate) => {
-      //   if (!e.candidate) {
-      //     return
-      //   }
-      //
-      //   console.log("[Room Signal] send ice candidate", e.candidate)
-      //   signal.ws?.send(JSON.stringify({
-      //     event: SignalEvent.TrickleIceCandidate,
-      //     data: JSON.stringify(e.candidate)
-      //   }))
-      // })
+      peerContext.on(PeerConnectionEvent.OnICECandidate, (e: RTCIceCandidate) => {
+        if (!e.candidate) {
+          return
+        }
+
+        console.log("[Room Signal] send ice candidate", e.candidate)
+        signal.ws?.send(JSON.stringify({
+          event: SignalEvent.TrickleIceCandidate,
+          data: JSON.stringify(e.candidate)
+        }))
+      })
 
       peerContext.peerConnection!.ontrack = (evt) => {
         console.log("on track", evt)
