@@ -20,6 +20,14 @@ COPY Makefile .
 RUN make setup
 RUN meson compile -C builddir
 
+# RUN --mount=type=cache,target=/go \
+#     go install github.com/pressly/goose/v3/cmd/goose@latest
+
+# ARG SQLITE_URI=identity.sqlite
+# RUN --mount=type=cache,target=/go \
+#     --mount=type=bind,source=./media-server/migrations,target=migrations \
+#     /root/go/bin/goose -dir ./migrations -table schema_migrations sqlite ${SQLITE_URI} up
+
 RUN --mount=type=cache,target=/go \
     --mount=type=bind,source=./pkg/go.mod,target=go.mod \
     go mod download -x
@@ -46,6 +54,9 @@ RUN apk add --no-cache libopencv_core libopencv_imgproc libintl
 COPY --from=media-server /app/bin/media-server /app/media-server
 # libopencv_aruco libopencv_calib3d libopencv_core libopencv_dnn libopencv_face libopencv_features2d libopencv_flann libopencv_highgui libopencv_imgcodecs libopencv_imgproc libopencv_ml libopencv_objdetect libopencv_optflow libopencv_photo libopencv_plot libopencv_shape libopencv_stitching libopencv_superres libopencv_tracking libopencv_video libopencv_videoio libopencv_videostab libopencv_ximgproc
 # ENTRYPOINT [ "/app/media-server" ]
+
+# ARG SQLITE_URI=identity.sqlite
+# COPY --from=media-server /app/${SQLITE_URI} /
 
 FROM nginx:alpine3.19 as gateway
 RUN apk add --no-cache openssl bash envsubst certbot certbot-nginx

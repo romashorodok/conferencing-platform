@@ -28,7 +28,7 @@ func httpErrorHandler(e *echo.Echo, logger *slog.Logger) func(err error, c echo.
 func httpServer(params httpServer_Params) {
 	router := echo.New()
 	router.HTTPErrorHandler = httpErrorHandler(router, params.Logger)
-    router.Use(middleware.CORS())
+	router.Use(middleware.CORS())
 
 	for _, controller := range params.Controllers {
 		controller.Resolve(router)

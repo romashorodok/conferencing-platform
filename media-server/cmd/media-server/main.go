@@ -70,6 +70,7 @@ func main() {
 		),
 
 		service.LoggerModule,
+        service.DatabaseModule,
 		service.WebrtcModule,
 		service.HttpModule,
 	).Run()

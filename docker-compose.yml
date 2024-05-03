@@ -2,6 +2,19 @@ networks:
   bridge:
 
 services:
+  postgres:
+    image: postgres:16-alpine3.19
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin
+    command: ["postgres", "-c", "log_statement=all", "-c", "log_destination=stderr"]
+    ports:
+      - 5432:5432
+    volumes:
+      - ".datacache/postgresql/data:/var/lib/postgresql/data"
+    networks:
+      - bridge
   media-server:
     build:
       target: media-server-bin
@@ -26,26 +39,26 @@ services:
         - action: rebuild
           path: pkg
           target: /app/pkg
-  gateway:
-    build:
-      target: gateway
-      args:
-        DOMAIN: localhost
-        VITE_MEDIA_SERVER: https://localhost/api
-        VITE_MEDIA_SERVER_WS: wss://localhost/api
-        # VITE_MEDIA_SERVER_STUN: stun:stun.l.google.com:19302
-    ports:
-      - 443:443
-      - 80:80
-    networks:
-      - bridge
-    volumes:
-        - /etc/letsencrypt
-    develop:
-      watch:
-        - action: sync+restart
-          path: certs.sh
-          target: /app/certs.sh
-        - action: sync+restart
-          path: nginx.templ.conf
-          target: /app/nginx.templ.conf
+  # gateway:
+  #   build:
+  #     target: gateway
+  #     args:
+  #       DOMAIN: localhost
+  #       VITE_MEDIA_SERVER: https://localhost/api
+  #       VITE_MEDIA_SERVER_WS: wss://localhost/api
+  #       # VITE_MEDIA_SERVER_STUN: stun:stun.l.google.com:19302
+  #   ports:
+  #     - 443:443
+  #     - 80:80
+  #   networks:
+  #     - bridge
+  #   volumes:
+  #       - /etc/letsencrypt
+  #   develop:
+  #     watch:
+  #       - action: sync+restart
+  #         path: certs.sh
+  #         target: /app/certs.sh
+  #       - action: sync+restart
+  #         path: nginx.templ.conf
+  #         target: /app/nginx.templ.conf
