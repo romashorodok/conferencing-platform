@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/romashorodok/conferencing-platform/media-server/internal/identity"
 	"github.com/romashorodok/conferencing-platform/media-server/internal/ingress"
 	"github.com/romashorodok/conferencing-platform/media-server/internal/mcu"
 	"github.com/romashorodok/conferencing-platform/media-server/internal/pipeline"
@@ -61,8 +62,12 @@ func main() {
 			room.NewRoomService,
 			room.NewRoomNotifier,
 
+			identity.NewTokenService,
+			identity.NewIdentityService,
+
 			globalprotocol.AsHttpController(ingress.NewWhipController),
 			globalprotocol.AsHttpController(room.NewRoomController),
+			globalprotocol.AsHttpController(identity.NewIdentityController),
 		),
 
 		fx.Module("test-room",
@@ -70,7 +75,7 @@ func main() {
 		),
 
 		service.LoggerModule,
-        service.DatabaseModule,
+		service.DatabaseModule,
 		service.WebrtcModule,
 		service.HttpModule,
 	).Run()

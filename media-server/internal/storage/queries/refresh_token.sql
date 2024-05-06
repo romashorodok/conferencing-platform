@@ -5,9 +5,9 @@ INSERT INTO refresh_tokens (
     plaintext,
     expires_at
 ) VALUES (
-    refresh_tokens.private_key_id = @private_key_id,
-    refresh_tokens.plaintext = @plaintext,
-    refresh_tokens.expires_at = @expires_at
+    @private_key_id,
+    @plaintext,
+    @expires_at
 ) RETURNING id;
 
 -- name: DelRefreshToken :exec

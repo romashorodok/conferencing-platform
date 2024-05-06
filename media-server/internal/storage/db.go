@@ -45,6 +45,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getUserStmt, err = db.PrepareContext(ctx, getUser); err != nil {
 		return nil, fmt.Errorf("error preparing query GetUser: %w", err)
 	}
+	if q.getUserByUsernameStmt, err = db.PrepareContext(ctx, getUserByUsername); err != nil {
+		return nil, fmt.Errorf("error preparing query GetUserByUsername: %w", err)
+	}
+	if q.getUserPrivateKeyStmt, err = db.PrepareContext(ctx, getUserPrivateKey); err != nil {
+		return nil, fmt.Errorf("error preparing query GetUserPrivateKey: %w", err)
+	}
 	if q.newPrivateKeyStmt, err = db.PrepareContext(ctx, newPrivateKey); err != nil {
 		return nil, fmt.Errorf("error preparing query NewPrivateKey: %w", err)
 	}
@@ -92,6 +98,16 @@ func (q *Queries) Close() error {
 	if q.getUserStmt != nil {
 		if cerr := q.getUserStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getUserStmt: %w", cerr)
+		}
+	}
+	if q.getUserByUsernameStmt != nil {
+		if cerr := q.getUserByUsernameStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getUserByUsernameStmt: %w", cerr)
+		}
+	}
+	if q.getUserPrivateKeyStmt != nil {
+		if cerr := q.getUserPrivateKeyStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getUserPrivateKeyStmt: %w", cerr)
 		}
 	}
 	if q.newPrivateKeyStmt != nil {
@@ -155,6 +171,8 @@ type Queries struct {
 	detachUserRefreshTokenStmt *sql.Stmt
 	getPrivateKeyStmt          *sql.Stmt
 	getUserStmt                *sql.Stmt
+	getUserByUsernameStmt      *sql.Stmt
+	getUserPrivateKeyStmt      *sql.Stmt
 	newPrivateKeyStmt          *sql.Stmt
 	newRefreshTokenStmt        *sql.Stmt
 	newUserStmt                *sql.Stmt
@@ -171,6 +189,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		detachUserRefreshTokenStmt: q.detachUserRefreshTokenStmt,
 		getPrivateKeyStmt:          q.getPrivateKeyStmt,
 		getUserStmt:                q.getUserStmt,
+		getUserByUsernameStmt:      q.getUserByUsernameStmt,
+		getUserPrivateKeyStmt:      q.getUserPrivateKeyStmt,
 		newPrivateKeyStmt:          q.newPrivateKeyStmt,
 		newRefreshTokenStmt:        q.newRefreshTokenStmt,
 		newUserStmt:                q.newUserStmt,

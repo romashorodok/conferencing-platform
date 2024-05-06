@@ -22,11 +22,14 @@ require (
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/gen2brain/shm v0.0.0-20230802011745-f2460f5984f7 // indirect
+	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/jezek/xgb v1.1.0 // indirect
 	github.com/kbinani/screenshot v0.0.0-20230812210009-b87d31814237 // indirect
 	github.com/kr/pretty v0.3.0 // indirect
 	github.com/labstack/gommon v0.4.0 // indirect
+	github.com/lestrrat-go/jwx/v2 v2.0.21 // indirect
+	github.com/lestrrat-go/option v1.0.1 // indirect
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/lxn/win v0.0.0-20210218163916-a377121e959e // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
@@ -50,6 +53,8 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rogpeppe/go-internal v1.9.0 // indirect
+	github.com/segmentio/asm v1.2.0 // indirect
+	github.com/sqlc-dev/pqtype v0.3.0 // indirect
 	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect

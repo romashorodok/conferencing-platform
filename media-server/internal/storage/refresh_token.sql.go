@@ -27,9 +27,9 @@ INSERT INTO refresh_tokens (
     plaintext,
     expires_at
 ) VALUES (
-    refresh_tokens.private_key_id = $1,
-    refresh_tokens.plaintext = $2,
-    refresh_tokens.expires_at = $3
+    $1,
+    $2,
+    $3
 ) RETURNING id
 `
 

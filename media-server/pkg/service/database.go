@@ -3,9 +3,9 @@ package service
 import (
 	"database/sql"
 	"fmt"
-	"log"
 
 	_ "github.com/lib/pq"
+	"github.com/romashorodok/conferencing-platform/media-server/internal/storage"
 	"go.uber.org/fx"
 )
 
@@ -56,13 +56,14 @@ func NewDatabaseConnection(params NewDatabaseConnectionParams) (*sql.DB, error) 
 	return conn, nil
 }
 
+func NewQueries(conn *sql.DB) *storage.Queries {
+	return storage.New(conn)
+}
+
 var DatabaseModule = fx.Module("db",
 	fx.Provide(
 		NewDatabaseConfig,
 		NewDatabaseConnection,
+		NewQueries,
 	),
-	fx.Invoke(func(conn *sql.DB) {
-		log.Println("conn: ", conn)
-		log.Printf("%+v", conn.Stats())
-	}),
 )

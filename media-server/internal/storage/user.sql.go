@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/sqlc-dev/pqtype"
 )
 
 const attachUserPrivateKey = `-- name: AttachUserPrivateKey :exec
@@ -16,8 +17,8 @@ INSERT INTO user_private_keys (
     user_id,
     private_key_id
 ) VALUES (
-    user_private_keys.user_id = $1,
-    user_private_keys.private_key_id = $2
+    $1,
+    $2
 )
 `
 
@@ -36,8 +37,8 @@ INSERT INTO user_refresh_tokens (
     user_id,
     refresh_token_id
 ) VALUES (
-    user_refresh_tokens.user_id = $1,
-    user_refresh_tokens.refresh_token_id = $2
+    $1,
+    $2
 )
 `
 
@@ -100,13 +101,48 @@ func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
 	return i, err
 }
 
+const getUserByUsername = `-- name: GetUserByUsername :one
+SELECt id, username, password
+FROM users
+WHERE users.username = $1
+`
+
+func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
+	row := q.queryRow(ctx, q.getUserByUsernameStmt, getUserByUsername, username)
+	var i User
+	err := row.Scan(&i.ID, &i.Username, &i.Password)
+	return i, err
+}
+
+const getUserPrivateKey = `-- name: GetUserPrivateKey :one
+SELECT
+    user_private_keys.private_key_id,
+    private_keys.jws_message
+FROM user_private_keys
+LEFT JOIN private_keys ON private_keys.id = user_private_keys.private_key_id
+WHERE user_private_keys.user_id = $1
+LIMIT 1
+`
+
+type GetUserPrivateKeyRow struct {
+	PrivateKeyID uuid.UUID
+	JwsMessage   pqtype.NullRawMessage
+}
+
+func (q *Queries) GetUserPrivateKey(ctx context.Context, userID uuid.UUID) (GetUserPrivateKeyRow, error) {
+	row := q.queryRow(ctx, q.getUserPrivateKeyStmt, getUserPrivateKey, userID)
+	var i GetUserPrivateKeyRow
+	err := row.Scan(&i.PrivateKeyID, &i.JwsMessage)
+	return i, err
+}
+
 const newUser = `-- name: NewUser :one
 INSERT INTO users (
     username,
     password
 ) VALUES (
-    users.username = $1,
-    users.password = $2
+    $1,
+    $2
 ) RETURNING id
 `
 
