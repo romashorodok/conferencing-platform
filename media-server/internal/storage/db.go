@@ -42,6 +42,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getPrivateKeyStmt, err = db.PrepareContext(ctx, getPrivateKey); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPrivateKey: %w", err)
 	}
+	if q.getPrivateKeyWithUserStmt, err = db.PrepareContext(ctx, getPrivateKeyWithUser); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPrivateKeyWithUser: %w", err)
+	}
 	if q.getUserStmt, err = db.PrepareContext(ctx, getUser); err != nil {
 		return nil, fmt.Errorf("error preparing query GetUser: %w", err)
 	}
@@ -93,6 +96,11 @@ func (q *Queries) Close() error {
 	if q.getPrivateKeyStmt != nil {
 		if cerr := q.getPrivateKeyStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getPrivateKeyStmt: %w", cerr)
+		}
+	}
+	if q.getPrivateKeyWithUserStmt != nil {
+		if cerr := q.getPrivateKeyWithUserStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPrivateKeyWithUserStmt: %w", cerr)
 		}
 	}
 	if q.getUserStmt != nil {
@@ -170,6 +178,7 @@ type Queries struct {
 	detachUserPrivateKeyStmt   *sql.Stmt
 	detachUserRefreshTokenStmt *sql.Stmt
 	getPrivateKeyStmt          *sql.Stmt
+	getPrivateKeyWithUserStmt  *sql.Stmt
 	getUserStmt                *sql.Stmt
 	getUserByUsernameStmt      *sql.Stmt
 	getUserPrivateKeyStmt      *sql.Stmt
@@ -188,6 +197,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		detachUserPrivateKeyStmt:   q.detachUserPrivateKeyStmt,
 		detachUserRefreshTokenStmt: q.detachUserRefreshTokenStmt,
 		getPrivateKeyStmt:          q.getPrivateKeyStmt,
+		getPrivateKeyWithUserStmt:  q.getPrivateKeyWithUserStmt,
 		getUserStmt:                q.getUserStmt,
 		getUserByUsernameStmt:      q.getUserByUsernameStmt,
 		getUserPrivateKeyStmt:      q.getUserPrivateKeyStmt,

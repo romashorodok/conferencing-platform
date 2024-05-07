@@ -88,6 +88,45 @@ func (q *Queries) DetachUserRefreshToken(ctx context.Context, arg DetachUserRefr
 	return err
 }
 
+const getPrivateKeyWithUser = `-- name: GetPrivateKeyWithUser :many
+SELECT
+    user_private_keys.private_key_id,
+    user_private_keys.user_id,
+    private_keys.jws_message
+FROM user_private_keys
+LEFT JOIN private_keys ON private_keys.id = user_private_keys.private_key_id
+WHERE user_private_keys.private_key_id = $1
+`
+
+type GetPrivateKeyWithUserRow struct {
+	PrivateKeyID uuid.UUID
+	UserID       uuid.UUID
+	JwsMessage   pqtype.NullRawMessage
+}
+
+func (q *Queries) GetPrivateKeyWithUser(ctx context.Context, privateKeyID uuid.UUID) ([]GetPrivateKeyWithUserRow, error) {
+	rows, err := q.query(ctx, q.getPrivateKeyWithUserStmt, getPrivateKeyWithUser, privateKeyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetPrivateKeyWithUserRow
+	for rows.Next() {
+		var i GetPrivateKeyWithUserRow
+		if err := rows.Scan(&i.PrivateKeyID, &i.UserID, &i.JwsMessage); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUser = `-- name: GetUser :one
 SELECT id, username, password
 FROM users

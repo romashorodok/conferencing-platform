@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lestrrat-go/jwx/v2/jwk"
+	"github.com/lestrrat-go/jwx/v2/jws"
+	"github.com/lestrrat-go/jwx/v2/jwt"
 	"github.com/romashorodok/conferencing-platform/media-server/internal/storage"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/sqlutil"
 	"go.uber.org/fx"
@@ -69,7 +71,7 @@ func (s *IdentityService) newUserPrivateKey(ctx context.Context, userID uuid.UUI
 	return
 }
 
-func (s *IdentityService) getOrCreateUserPrivateKey(ctx context.Context, userID uuid.UUID) (pkeyID *uuid.UUID, pkeyJwsMessage string, err error) {
+func (s *IdentityService) getOrCreateUserAccessTokenPrivateKey(ctx context.Context, userID uuid.UUID) (pkeyID *uuid.UUID, pkeyJwsMessage string, err error) {
 	pkeyResult, err := s.queries.GetUserPrivateKey(ctx, userID)
 	if err != nil {
 		pkeyID, pkeyJwsMessage, err = s.newUserPrivateKey(ctx, userID)
@@ -88,7 +90,7 @@ func (s *IdentityService) getOrCreateUserPrivateKey(ctx context.Context, userID 
 }
 
 func (s *IdentityService) userNewTokenPair(ctx context.Context, user *User) (*tokenPair, error) {
-	pkeyID, pkeyJwsMessage, err := s.getOrCreateUserPrivateKey(ctx, user.ID)
+	pkeyID, pkeyJwsMessage, err := s.getOrCreateUserAccessTokenPrivateKey(ctx, user.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -115,8 +117,6 @@ func (s *IdentityService) userNewTokenPair(ctx context.Context, user *User) (*to
 		RefreshToken: refreshToken,
 	}, nil
 }
-
-type signInResult struct{}
 
 func (s *IdentityService) SignIn(ctx context.Context, username, password string) (*tokenPair, error) {
 	if username == "" || password == "" {
@@ -155,6 +155,110 @@ func (s *IdentityService) SignUp(ctx context.Context, username, password string)
 	}
 
 	return s.SignIn(ctx, username, password)
+}
+
+type TokenContext struct {
+	Aud      []string  `json:"aud"`
+	Exp      int       `json:"exp"`
+	Iss      string    `json:"iss"`
+	Sub      string    `json:"sub"`
+	TokenUse string    `json:"token:use"`
+	UserID   uuid.UUID `json:"user:id"`
+
+	kid            uuid.UUID
+	pkeyJwsMessage string
+}
+
+func (s *IdentityService) TokenIdentity(ctx context.Context, insecureToken string) (*TokenContext, error) {
+	untrustJws, err := jws.Parse([]byte(insecureToken))
+	if err != nil {
+		return nil, err
+	}
+
+	signKid := untrustJws.Signatures()[0].ProtectedHeaders().KeyID()
+
+	privateKeyID, err := uuid.Parse(signKid)
+	if err != nil {
+		return nil, err
+	}
+
+	privKeys, err := s.queries.GetPrivateKeyWithUser(ctx, privateKeyID)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(privKeys) > 1 {
+		return nil, ErrSameUserSignedByOnePrivateKey
+	} else if len(privKeys) < 1 || !privKeys[0].JwsMessage.Valid {
+		return nil, ErrPrivateKeyNotFound
+	}
+
+	pkeyJwsMessage := privKeys[0].JwsMessage.RawMessage
+	key, err := jwk.ParseKey([]byte(pkeyJwsMessage))
+	if err != nil {
+		return nil, err
+	}
+
+	pubKeys := keyset(privateKeyID.String(), key)
+
+	// Verify token signature
+	trusted, err := jws.Verify([]byte(insecureToken), jws.WithKeySet(pubKeys, jws.WithRequireKid(true)))
+	if err != nil {
+		return nil, err
+	}
+
+	payload := &TokenContext{}
+
+	if err = json.Unmarshal(trusted, payload); err != nil {
+		return nil, err
+	}
+
+	// Check if token is valid exp date, etc...
+	notValid, err := jwt.Parse([]byte(insecureToken), jwt.WithVerify(false), jwt.WithValidate(false))
+	if err != nil {
+		return nil, err
+	}
+
+	if err := jwt.Validate(notValid); err != nil {
+		return nil, err
+	}
+
+	payload.kid = privateKeyID
+	payload.pkeyJwsMessage = string(pkeyJwsMessage)
+	return payload, nil
+}
+
+func (s *IdentityService) ActualizeTokenPair(ctx context.Context, token *TokenContext) (*tokenPair, error) {
+	if token.TokenUse != REFRESH_TOKEN {
+		return nil, ErrRefreshTokenConstraintViolation
+	}
+
+	storageUser, err := s.queries.GetUser(ctx, token.UserID)
+	if err != nil {
+		return nil, err
+	}
+
+	u := &User{User: storageUser}
+
+	aTokPkeyID, aTokJwsMessage, err := s.getOrCreateUserAccessTokenPrivateKey(ctx, u.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	accessToken, err := s.token.CreateAccessToken(u, *aTokPkeyID, aTokJwsMessage)
+	if err != nil {
+		return nil, err
+	}
+
+	refreshToken, err := s.token.CreateRefreshToken(u, token.kid, token.pkeyJwsMessage)
+	if err != nil {
+		return nil, err
+	}
+
+	return &tokenPair{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+	}, nil
 }
 
 type NewIdentityServiceParams struct {

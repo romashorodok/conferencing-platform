@@ -27,6 +27,15 @@ LEFT JOIN private_keys ON private_keys.id = user_private_keys.private_key_id
 WHERE user_private_keys.user_id = @user_id
 LIMIT 1;
 
+-- name: GetPrivateKeyWithUser :many
+SELECT
+    user_private_keys.private_key_id,
+    user_private_keys.user_id,
+    private_keys.jws_message
+FROM user_private_keys
+LEFT JOIN private_keys ON private_keys.id = user_private_keys.private_key_id
+WHERE user_private_keys.private_key_id = @private_key_id;
+
 -- name: AttachUserPrivateKey :exec
 INSERT INTO user_private_keys (
     user_id,
