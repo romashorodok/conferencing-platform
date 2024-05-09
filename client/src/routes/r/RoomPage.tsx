@@ -5,7 +5,7 @@ import { MediaStreamContext } from "../../rtc/MediaStreamProvider"
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { useSize } from "../../utils/resize";
 import * as Dialog from '@radix-ui/react-dialog';
-import { CloseIcon, GalleryIcon, SettingsIcon, StopIcon, UserIcon } from "../../AppLayout";
+import { CloseIcon, DialogWindow, GalleryIcon, SettingsIcon, StopIcon, UserIcon } from "../../AppLayout";
 
 type videoFiltersMenuProps = {
   videoFilterList: Array<Filter>
@@ -161,32 +161,23 @@ function GridLayout({
 function SettingsDialog() {
   const [open, setOpen] = useState<boolean>(false)
 
-  return (
-    <Dialog.Root open={open}>
-      <Dialog.Trigger asChild>
-        <button className="Button cursor-pointer px-2" onClick={() => setOpen(true)}>
-          <SettingsIcon className="w-[32px] h-[32px]" />
-        </button>
-      </Dialog.Trigger>
-      <Dialog.Portal>
-        <Dialog.Overlay className="DialogOverlay" />
-        <Dialog.Content className="DialogContent max-w-[530px] max-h-[85vh] z-[1000]">
-          <Dialog.Title className="DialogTitle">User settings</Dialog.Title>
+  const button =
+    <button className="Button cursor-pointer px-2" onClick={() => setOpen(true)}>
+      <SettingsIcon className="w-[32px] h-[32px]" />
+    </button>
 
-          <CameraComponent />
-          <div className={`flex flex-row justify-center gap-4 flex-3 p-4`}>
-            <FaceDetectionButtons />
-          </div>
+  const title = <p>User settings</p>
 
-          <Dialog.Close asChild>
-            <button className="IconButton cursor-pointer" aria-label="Close" onClick={() => setOpen(false)}>
-              <CloseIcon />
-            </button>
-          </Dialog.Close>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+  const content = (
+    <>
+      <CameraComponent />
+      <div className={`flex flex-row justify-center gap-4 flex-3 p-4`}>
+        <FaceDetectionButtons />
+      </div>
+    </>
   )
+
+  return <DialogWindow button={button} open={open} setOpen={setOpen} title={title} content={content} description={<></>} />
 }
 
 export function FaceDetectionButtons() {

@@ -1,4 +1,4 @@
-import { FormEvent, createRef, useContext, useState } from "react"
+import { Dispatch, FormEvent, SetStateAction, createRef, useContext, useState } from "react"
 import { Room, RoomNotifierContext, createRoom } from "./room/RoomProvider"
 import * as Dialog from '@radix-ui/react-dialog'
 import { PlusIcon } from "@radix-ui/react-icons";
@@ -48,6 +48,41 @@ export function StopIcon({ className = "p-[0] w-6 w-6" }: { className?: string }
   )
 }
 
+export function DialogWindow(props: {
+  open: boolean,
+  setOpen: Dispatch<SetStateAction<boolean>>,
+  button: JSX.Element,
+  title: JSX.Element,
+  description: JSX.Element,
+  content: JSX.Element
+}) {
+
+  return (
+    <Dialog.Root open={props.open}>
+      <Dialog.Trigger asChild>
+        {props.button}
+      </Dialog.Trigger>
+      <Dialog.Portal>
+        <Dialog.Overlay className="DialogOverlay" />
+        <Dialog.Content className="DialogContent max-w-[450px] max-h-[85vh] z-[1000]">
+          <Dialog.Title className="DialogTitle">
+            {props.title}
+          </Dialog.Title>
+          <Dialog.Description className="DialogDescription">
+            {props.description}
+          </Dialog.Description>
+          {props.content}
+          <Dialog.Close asChild>
+            <button className="IconButton cursor-pointer" aria-label="Close" onClick={() => props.setOpen(false)}>
+              <CloseIcon />
+            </button>
+          </Dialog.Close>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  )
+}
+
 function RoomDialog() {
   const [open, setOpen] = useState<boolean>(false)
 
@@ -63,42 +98,32 @@ function RoomDialog() {
     }
   }
 
-  return (
-    <Dialog.Root open={open}>
-      <Dialog.Trigger asChild>
-        <button className="filter-white cursor-pointer px-4" onClick={() => setOpen(true)}>
-          <PlusIcon className="filter-white p-[0]" width={18} height={18} />
-        </button>
-      </Dialog.Trigger>
-      <Dialog.Portal>
-        <Dialog.Overlay className="DialogOverlay" />
-        <Dialog.Content className="DialogContent max-w-[450px] max-h-[85vh] z-[1000]">
-          <Dialog.Title className="DialogTitle">Create conference room</Dialog.Title>
-          <Dialog.Description className="DialogDescription">
-            Create conferencing room to collaborate
-          </Dialog.Description>
-          <form autoComplete="off" onSubmit={onSubmit}>
-            <fieldset className="Fieldset">
-              <label className="Label" htmlFor="name">
-                Name
-              </label>
-              <input className="Input" name="name" id="name" />
-            </fieldset>
-            <div style={{ display: 'flex', marginTop: 25, justifyContent: 'flex-end' }}>
-              <Dialog.Close asChild>
-                <button type="submit" className="cursor-pointer">Create room</button>
-              </Dialog.Close>
-            </div>
-          </form>
-          <Dialog.Close asChild>
-            <button className="IconButton cursor-pointer" aria-label="Close" onClick={() => setOpen(false)}>
-              <CloseIcon />
-            </button>
-          </Dialog.Close>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
-  );
+  const button =
+    <button className="filter-white cursor-pointer px-4" onClick={() => setOpen(true)}>
+      <PlusIcon className="filter-white p-[0]" width={18} height={18} />
+    </button>
+
+  const title = <p>Create conference room</p>
+
+  const description = <p>Create conferencing room to collaborate</p>
+
+  const content =
+    <form autoComplete="off" onSubmit={onSubmit}>
+      <fieldset className="Fieldset">
+        <label className="Label" htmlFor="name">
+          Name
+        </label>
+        <input className="Input" name="name" id="name" />
+      </fieldset>
+      <div style={{ display: 'flex', marginTop: 25, justifyContent: 'flex-end' }}>
+        <Dialog.Close asChild>
+          <button type="submit" className="cursor-pointer">Create room</button>
+        </Dialog.Close>
+      </div>
+    </form>
+
+
+  return <DialogWindow button={button} open={open} setOpen={setOpen} title={title} description={description} content={content} />
 }
 
 function RoomNavItem({ room }: { room: Room }) {

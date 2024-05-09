@@ -443,11 +443,11 @@ export function CameraComponent() {
   }, [video, mediaStream])
 
   return (
-    <div className={`p-4 min-w-max`}>
-      <div className={`flex relative w-[448px] h-[252px]`} >
-        <div className={`${mediaStreamReady ? 'visible' : 'invisible'} z-10`}>
-          <video ref={video} className={`w-[448px] h-[252px]`} autoPlay muted />
-          <div className={`absolute left-[41%] bottom-[10%] flex gap-6`}>
+    <div className={`min-w-[400px] min-h-[120px] max-w-max max-h-max`}>
+      <div className={`flex place-self-center place-content-center relative w-full h-full`} >
+        <div className={`${mediaStreamReady ? 'visible' : 'invisible'} contents z-10`}>
+          <video ref={video} className={`z-10 w-5/6 h-5/6 object-cover place-self-center`} autoPlay muted />
+          <div className={`absolute left-[41%] bottom-[10%] z-20 flex gap-6`}>
             <AudioControl />
             <VideoControl />
           </div>
@@ -455,13 +455,14 @@ export function CameraComponent() {
         {mediaStreamReady
           ? null
           : (
-            <div className={`absolute left-[43%] bottom-[10%] z-10`} >
+            <div className={`absolute left-[43%] bottom-[10%] z-20`} >
               <p>Loading</p>
               <LoadingDots absolute={false} />
             </div>
           )}
         <span className={`z-0 absolute bg-black w-full h-full`}></span>
       </div>
+
     </div>
   );
 };
@@ -682,8 +683,6 @@ export function RoomStream({
 function Room() {
   const { roomMediaList } = useRoom()
 
-
-  // <button onClick={join}>Join</button>
   return (
     <div>
       {Object.entries(roomMediaList).map(([id, { stream }]) => (
