@@ -1,9 +1,15 @@
-import { Dispatch, FormEvent, SetStateAction, createRef, useContext, useState } from "react"
+import { Dispatch, FormEvent, SetStateAction, createRef, useCallback, useContext, useState } from "react"
 import { Room, RoomNotifierContext, createRoom } from "./room/RoomProvider"
 import * as Dialog from '@radix-ui/react-dialog'
 import { PlusIcon } from "@radix-ui/react-icons";
 import { NavLink } from "react-router-dom";
 import { useSize } from "./utils/resize";
+import { useAuth, useAuthorizedFetch } from "./rtc/AuthProvider";
+import { IDENTITY_SERVER } from "./variables";
+import * as yup from 'yup';
+import { useForm } from "./hooks/useForm";
+import * as Form from "@radix-ui/react-form";
+import { FormField } from "./base/form-field";
 
 export function CloseIcon() {
   return (
@@ -126,6 +132,80 @@ function RoomDialog() {
   return <DialogWindow button={button} open={open} setOpen={setOpen} title={title} description={description} content={content} />
 }
 
+const signInFormSchema = yup.object({
+  username: yup.string().required("Username required").min(2, "Username must be at least 2 characters"),
+  password: yup.string().required("Password required"),
+})
+
+export function SignInForm({ setOpen }: { setOpen: Dispatch<SetStateAction<boolean>> }) {
+  const { signIn } = useAuth()
+  const { fetch } = useAuthorizedFetch()
+  const { state, onChange, messages, validate, setMessages } = useForm({
+    username: "",
+    password: "",
+  }, signInFormSchema)
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault()
+
+    if (!await validate()) {
+      console.log("Invalid state", state)
+      return
+    }
+
+    signIn({ username: state.username, password: state.password })
+      .then(() => setOpen(false) )
+      .catch(async (r: Response) => {
+        setMessages({
+          password: [(await r.json()).message]
+        })
+      })
+
+  }
+
+  const wallEcho = useCallback(async () => {
+    if (!fetch) return
+
+    const resp = await fetch(`${IDENTITY_SERVER}/wall-echo`, {
+      method: 'POST',
+    })
+
+    console.log("wall echo resp", resp)
+  }, [fetch])
+
+  return (
+    <Form.Root autoComplete="off" onSubmit={onSubmit} onChange={onChange}>
+      <FormField title={"Username"} name={"username"} type={"text"} messages={messages} />
+      <FormField title={"Password"} name={"password"} type={"password"} messages={messages} />
+      <Form.Submit asChild>
+        <button type="submit"
+          className="Button box-border w-full inline-flex h-[35px] items-center justify-center rounded-[4px] px-[15px] font-medium leading-none cursor-pointer focus:outline-none mt-[10px]">
+          Sign In
+        </button>
+      </Form.Submit>
+
+      <button type="button" onClick={wallEcho}>Identity wall echo</button>
+    </Form.Root>
+  )
+}
+
+function SignInDialog({ openDialog = false }) {
+  const [open, setOpen] = useState<boolean>(openDialog)
+
+  const button = <button onClick={() => setOpen(true)}>SignUp</button>
+
+
+  return <DialogWindow open={open} setOpen={setOpen} button={button} title={<p>Sign Up</p>} description={<></>} content={<SignInForm setOpen={setOpen} />} />
+}
+
+function SignOutButton() {
+  const { signOut } = useAuth()
+
+  return (
+    <button className={`Button max-w-[70px] px-1 w-full h-[30px] violet clipped-text block`} type="button" onClick={signOut}>Sign Out</button>
+  )
+}
+
 function RoomNavItem({ room }: { room: Room }) {
   return (
     <div className={`p-2`}>
@@ -166,12 +246,29 @@ function showNawbar(width: number): boolean {
 export default function({ children }: React.PropsWithChildren<{}>) {
   const rootDivRef = createRef<HTMLDivElement>()
   const { width, } = useSize(rootDivRef)
+  const { authenticated } = useAuth()
 
   return (
     <div ref={rootDivRef} className={`flex flex-col min-h-screen max-h-screen`}>
-      <header>
+      <header className={`flex-[1] flex align-center`}>
+        {(() => {
+          if (!authenticated) {
+            return (
+              <>
+                <SignInDialog />
+              </>
+            )
+          }
+
+          return (
+            <div className={`flex flex`}>
+              <SignOutButton />
+            </div>
+          )
+        })()}
+
       </header>
-      <section className={`flex-[1] flex overflow-hidden`}>
+      <section className={`flex-[20] flex overflow-hidden`}>
         {showNawbar(width) &&
           <RoomNav />}
         <main className={`flex flex-col flex-[1] max-h-full overflow-scroll relative`}>

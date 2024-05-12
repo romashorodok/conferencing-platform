@@ -1,10 +1,10 @@
 package identity
 
 import (
+	"database/sql"
 	"errors"
 	"log"
 	"net/http"
-	"strings"
 
 	"github.com/labstack/echo/v4"
 	globalprotocol "github.com/romashorodok/conferencing-platform/pkg/protocol"
@@ -12,7 +12,7 @@ import (
 )
 
 type errResponse struct {
-	Message string `json:"message`
+	Message string `json:"message"`
 }
 
 func newErrorResponse(err error) any {
@@ -39,7 +39,17 @@ func (i *identityController) IdentitySignIn(c echo.Context) error {
 	tokenPair, err := i.identityService.SignIn(c.Request().Context(), req.Username, req.Password)
 	if err != nil {
 		log.Println("SignIn", tokenPair, "err", err)
-		return err
+
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return c.JSON(http.StatusNotFound, &errResponse{
+				Message: "Invalid user credentials",
+			})
+		default:
+		}
+		return c.JSON(http.StatusInternalServerError, &errResponse{
+			Message: err.Error(),
+		})
 	}
 
 	return c.JSON(http.StatusOK, tokenPair)
@@ -80,25 +90,7 @@ type identityTokenVerifyValidResponse struct {
 var _ErrEmptyAuthorizationHeader = errors.New("empty authorization header")
 
 func (i *identityController) IdentityTokenVerify(c echo.Context) error {
-	header := new(identityTokenVerifyRequestHeader)
-
-	if err := (&echo.DefaultBinder{}).BindHeaders(c, header); err != nil {
-		return c.String(http.StatusBadRequest, "bad request")
-	}
-
-	if header.Authorization == "" {
-		return _ErrEmptyAuthorizationHeader
-	}
-
-	insecureToken := strings.TrimPrefix(header.Authorization, "Bearer ")
-	if insecureToken == "" {
-		return _ErrEmptyAuthorizationHeader
-	}
-
-	token, err := i.identityService.TokenIdentity(c.Request().Context(), insecureToken)
-	if err != nil {
-		return c.JSON(http.StatusForbidden, newErrorResponse(err))
-	}
+	token := WithTokenContext(c)
 
 	if token.TokenUse != REFRESH_TOKEN {
 		return c.JSON(http.StatusOK, &identityTokenVerifyValidResponse{
@@ -114,6 +106,10 @@ func (i *identityController) IdentityTokenVerify(c echo.Context) error {
 	return c.JSON(http.StatusCreated, pair)
 }
 
+func (i *identityController) wallEcho(c echo.Context) error {
+	return c.JSON(http.StatusOK, WithTokenContext(c))
+}
+
 type identityWrapper interface {
 	IdentitySignIn(echo.Context) error
 	IdentitySignUp(c echo.Context) error
@@ -124,10 +120,16 @@ type identityWrapper interface {
 func (i *identityController) Resolve(router *echo.Echo) error {
 	baseURL := "/identity"
 
+	middlewares := []echo.MiddlewareFunc{
+		echo.MiddlewareFunc(IdentityWallFactoryMiddleware(i.identityService)),
+	}
+
 	router.POST(baseURL+"/sign-in", i.IdentitySignIn)
 	router.POST(baseURL+"/sign-up", i.IdentitySignUp)
 	router.DELETE(baseURL+"/sign-out", i.IdentitySignOut)
-	router.POST(baseURL+"/token-verify", i.IdentityTokenVerify)
+
+	router.POST(baseURL+"/token-verify", i.IdentityTokenVerify, middlewares...)
+	router.POST(baseURL+"/wall-echo", i.wallEcho, middlewares...)
 
 	return nil
 }
