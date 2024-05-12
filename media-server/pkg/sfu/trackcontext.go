@@ -313,7 +313,7 @@ func (t *TrackContext) SetFilter(filter *Filter) error {
 	switch filter {
 	case FILTER_NONE:
 		media, err = NewTrackWriterRtp(t.codecParams.RTPCodecCapability, t.ID(), t.StreamID())
-	case FILTER_RTP_VP8_DUMMY:
+	case FILTER_RTP_CANNY_FILTER:
 		media, err = NewTrackWriterSample(t.codecParams.RTPCodecCapability, t.ID(), t.StreamID())
 		if err != nil {
 			return err
@@ -329,7 +329,7 @@ func (t *TrackContext) SetFilter(filter *Filter) error {
 		// })
 
 		var pipe Pipeline
-		pipe, err = t.pipeAllocContext.Allocate(FILTER_RTP_VP8_DUMMY, t)
+		pipe, err = t.pipeAllocContext.Allocate(FILTER_RTP_CANNY_FILTER, t)
 		pipe.Start()
 		if err != nil {
 			panic(err)

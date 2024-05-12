@@ -98,7 +98,7 @@ func writeSampleIfExist(t *sfu.TrackContext, sink *mcu.GstElement) {
 	w, err := t.GetTrackRemoteWriterSample()
 	if err != nil {
 		log.Println("writer empty", err)
-        return
+		return
 	}
 
 	err = w.WriteRemote(media.Sample{
@@ -121,8 +121,6 @@ func (c *CannyFilter) handleSample() {
 	}
 }
 
-var _ sfu.Pipeline = (*CannyFilter)(nil)
-
 const _QUEUE_BUFFER_SIZE = 10485760 * 8
 
 func setQueueBufferSize(elem *mcu.GstElement) {
@@ -130,7 +128,7 @@ func setQueueBufferSize(elem *mcu.GstElement) {
 }
 
 // TODO: use just function
-func (c *CannyFilter) New(t *sfu.TrackContext) (sfu.Pipeline, error) {
+func NewCannyFilter(t *sfu.TrackContext) (sfu.Pipeline, error) {
 	var filter CannyFilter
 	filter.track = t
 	filter.caps = mcu.CapsFromString(mcu.NewRtpVP8Caps(t.GetClockRate()))

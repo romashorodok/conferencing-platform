@@ -8,8 +8,6 @@ import (
 	"time"
 )
 
-const RTP_VP8_DUMMY = "rtp-vp8-dummy"
-
 type MimeType string
 
 func (m *MimeType) String() string {
@@ -40,12 +38,11 @@ var (
 		Allocator: nil,
 	}
 
-	FILTER_RTP_VP8_DUMMY = &Filter{
-		Name: RTP_VP8_DUMMY,
+	FILTER_RTP_CANNY_FILTER = &Filter{
+		Name: "canny filter",
 		MimeTypes: []MimeType{
 			MIME_TYPE_VIDEO,
 		},
-		Allocator: nil,
 	}
 )
 
@@ -58,7 +55,6 @@ type Pipeline interface {
 
 	Start() error
 	Close() error
-	New(t *TrackContext) (Pipeline, error)
 }
 
 type Allocator = func(t *TrackContext) (Pipeline, error)
@@ -73,6 +69,7 @@ func (ctx *AllocatorsContext) Register(name *Filter, alloc Allocator) {
 		os.Exit(1)
 	}
 	ctx.allocators[name] = alloc
+    name.Allocator = alloc
 }
 
 func (ctx *AllocatorsContext) Filter(name string) (*Filter, error) {

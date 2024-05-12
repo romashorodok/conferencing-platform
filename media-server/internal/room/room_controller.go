@@ -83,6 +83,9 @@ type SubscribeMessage struct {
 }
 
 func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId string) error {
+    cookies := ctx.Request().Cookies()
+    log.Printf("cookies %+v", cookies)
+
 	roomCtx := ctrl.roomService.GetRoom(roomId)
 	if roomCtx == nil {
 		return ErrRoomNotExist

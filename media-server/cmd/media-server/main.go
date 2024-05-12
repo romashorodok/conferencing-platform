@@ -38,13 +38,11 @@ func CreateTestRoom(params CreateTestRoom_Params) {
 	_ = room
 }
 
+var _ sfu.Pipeline = (*pipeline.CannyFilter)(nil)
+
 func NewPipelinesAllocatorsContext() *sfu.AllocatorsContext {
 	allocContext := sfu.NewAllocatorsContext()
-
-	cannyFilter := &pipeline.CannyFilter{}
-
-	allocContext.Register(sfu.FILTER_RTP_VP8_DUMMY, cannyFilter.New)
-	// allocContext.Register(sfu.FILTER_RTP_VP8_DUMMY, sfu.Allocator(cpppipelines.NewRtpVP8))
+	allocContext.Register(sfu.FILTER_RTP_CANNY_FILTER, pipeline.NewCannyFilter)
 	return allocContext
 }
 
