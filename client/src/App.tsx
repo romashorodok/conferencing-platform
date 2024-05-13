@@ -509,7 +509,7 @@ function RoomParticipant({
           </div>
         )
         : null}
-      <span className={`z-0 absolute bg-black h-full w-full rounded-lg`}></span>
+      {/* <span className={`z-0 absolute bg-black h-full w-full rounded-lg`}></span> */}
     </div>
   )
 }

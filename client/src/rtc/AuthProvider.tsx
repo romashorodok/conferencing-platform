@@ -179,6 +179,7 @@ export function AuthContextProvider({ children }: PropsWithChildren<{}>) {
       console.warn(`Reset token pair identity accessToken: ${accessToken}, refreshToken: ${refreshToken}`)
       removeCookie(__COOKIE_ACCESS_TOKEN)
       removeCookie(__COOKIE_REFRESH_TOKEN)
+      document.cookie = ""
       __setTokenPair(undefined)
       return
     }
