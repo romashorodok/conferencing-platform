@@ -499,7 +499,7 @@ function RoomParticipant({
   return (
     <div className={`flex place-self-center place-content-center relative w-full h-full`} >
       <div className={`${isLoading ? 'invisible' : 'visible'} contents`}>
-        <video ref={video} className={`z-10 w-5/6 h-5/6 object-cover place-self-center`} />
+        <video ref={video} className={`z-10 w-5/6 h-5/6 place-self-center`} />
       </div>
       {isLoading
         ? (

@@ -154,7 +154,7 @@ export function SignInForm({ setOpen }: { setOpen: Dispatch<SetStateAction<boole
     }
 
     signIn({ username: state.username, password: state.password })
-      .then(() => setOpen(false) )
+      .then(() => setOpen(false))
       .catch(async (r: Response) => {
         setMessages({
           password: [(await r.json()).message]
@@ -250,27 +250,26 @@ export default function({ children }: React.PropsWithChildren<{}>) {
 
   return (
     <div ref={rootDivRef} className={`flex flex-col min-h-screen max-h-screen`}>
-      <header className={`flex-[1] flex align-center`}>
-        {(() => {
-          if (!authenticated) {
-            return (
-              <>
-                <SignInDialog />
-              </>
-            )
-          }
-
-          return (
-            <div className={`flex flex`}>
-              <SignOutButton />
-            </div>
-          )
-        })()}
-
-      </header>
       <section className={`flex-[20] flex overflow-hidden`}>
         {showNawbar(width) &&
-          <RoomNav />}
+          <div>
+            {(() => {
+              if (!authenticated) {
+                return (
+                  <>
+                    <SignInDialog />
+                  </>
+                )
+              }
+              return (
+                <div className={`flex justify-center py-2`}>
+                  <SignOutButton />
+                </div>
+              )
+            })()}
+            <RoomNav />
+          </div>
+        }
         <main className={`flex flex-col flex-[1] max-h-full overflow-scroll relative`}>
           {children}
         </main>
