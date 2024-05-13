@@ -15,7 +15,6 @@ import (
 	"github.com/gorilla/websocket"
 	echo "github.com/labstack/echo/v4"
 	webrtc "github.com/pion/webrtc/v4"
-	"github.com/romashorodok/conferencing-platform/media-server/pkg/protocol"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/rtpstats"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/sfu"
 	"github.com/romashorodok/conferencing-platform/pkg/controller/room"
@@ -83,8 +82,8 @@ type SubscribeMessage struct {
 }
 
 func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId string) error {
-    cookies := ctx.Request().Cookies()
-    log.Printf("cookies %+v", cookies)
+	cookies := ctx.Request().Cookies()
+	log.Printf("cookies %+v", cookies)
 
 	roomCtx := ctrl.roomService.GetRoom(roomId)
 	if roomCtx == nil {
@@ -255,22 +254,12 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 				return ctrl.wsError(w, err)
 			}
 
-			// filter, err := ctrl.pipeAllocContext.Filter(fData.Name)
-			// if err != nil {
-			// 	return ctrl.wsError(w, err)
-			// }
-			// log.Printf("%+v", filter)
-
-			// filter := ctrl.pipeAllocContext.Filter(name string)
-			// log.Println("filter message recv", message)
-
 		default:
 			return ctrl.wsError(w, errors.New("wrong message event"))
 		}
 	}
 }
 
-// RoomControllerRoomDelete implements room.ServerInterface.
 func (*roomController) RoomControllerRoomDelete(ctx echo.Context, sessionID string) error {
 	panic("unimplemented")
 }
@@ -281,13 +270,18 @@ func (ctrl *roomController) RoomControllerRoomList(ctx echo.Context) error {
 	})
 }
 
+type RoomCreateOption struct {
+	MaxParticipants int32
+	RoomID          *string
+}
+
 func (ctrl *roomController) RoomControllerRoomCreate(ctx echo.Context) error {
 	var request room.RoomCreateRequest
 	if err := json.NewDecoder(ctx.Request().Body).Decode(&request); err != nil {
 		return err
 	}
 
-	room, err := ctrl.roomService.CreateRoom(&protocol.RoomCreateOption{
+	room, err := ctrl.roomService.CreateRoom(&RoomCreateOption{
 		RoomID:          request.RoomId,
 		MaxParticipants: *request.MaxParticipants,
 	})

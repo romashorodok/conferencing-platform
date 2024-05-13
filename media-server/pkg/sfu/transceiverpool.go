@@ -14,8 +14,6 @@ type TransceiverPool struct {
 	free   map[string]*webrtc.RTPTransceiver
 }
 
-// Always must return `Inactive` transceiver.
-// You need set track for it and start manually
 func (s *TransceiverPool) Get() (*webrtc.RTPTransceiver, error) {
 	s.poolMu.RLock()
 	defer s.poolMu.RUnlock()

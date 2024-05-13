@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/uuid"
 	webrtc "github.com/pion/webrtc/v4"
-	"github.com/romashorodok/conferencing-platform/media-server/pkg/protocol"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/sfu"
 	"github.com/romashorodok/conferencing-platform/pkg/controller/room"
 	"github.com/romashorodok/conferencing-platform/pkg/executils"
@@ -77,7 +76,7 @@ func NewRoomNotifier() *RoomNotifier {
 }
 
 type roomContext struct {
-	roomID          protocol.RoomID
+	roomID          string
 	peerContextPool *sfu.PeerContextPool
 }
 
@@ -97,7 +96,7 @@ func (r *roomContext) Info() room.Room {
 }
 
 type NewRoomContextParams struct {
-	RoomID protocol.RoomID
+	RoomID string
 }
 
 func NewRoomContext(params NewRoomContextParams) *roomContext {
@@ -112,7 +111,7 @@ type RoomService struct {
 
 	webrtcAPI      *webrtc.API
 	logger         *slog.Logger
-	roomContextMap map[protocol.RoomID]*roomContext
+	roomContextMap map[string]*roomContext
 	roomNotifier   *RoomNotifier
 }
 
@@ -150,7 +149,7 @@ func NullableRoomID(roomID *string) string {
 	return uuid.NewString()
 }
 
-func (s *RoomService) CreateRoom(option *protocol.RoomCreateOption) (*roomContext, error) {
+func (s *RoomService) CreateRoom(option *RoomCreateOption) (*roomContext, error) {
 	s.Lock()
 	defer s.Unlock()
 

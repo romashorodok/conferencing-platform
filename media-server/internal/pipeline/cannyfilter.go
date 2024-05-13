@@ -127,7 +127,6 @@ func setQueueBufferSize(elem *mcu.GstElement) {
 	mcu.ObjectSet(elem, "max-size-bytes", _QUEUE_BUFFER_SIZE)
 }
 
-// TODO: use just function
 func NewCannyFilter(t *sfu.TrackContext) (sfu.Pipeline, error) {
 	var filter CannyFilter
 	filter.track = t
@@ -337,10 +336,6 @@ func NewCannyFilter(t *sfu.TrackContext) (sfu.Pipeline, error) {
 		panic("unable link GstElement")
 	}
 
-	// succes = mcu.ElementLink(queueVisionCannyFilter, videoconvertOut)
-	// if !succes {
-	// 	panic("unable link GstElement")
-	// }
 	succes = mcu.ElementLink(queueVideoconvertOut, videoconvertOut)
 	if !succes {
 		panic("unable link GstElement")

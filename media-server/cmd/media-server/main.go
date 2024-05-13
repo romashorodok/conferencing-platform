@@ -6,11 +6,9 @@ import (
 	"net/http"
 
 	"github.com/romashorodok/conferencing-platform/media-server/internal/identity"
-	"github.com/romashorodok/conferencing-platform/media-server/internal/ingress"
 	"github.com/romashorodok/conferencing-platform/media-server/internal/mcu"
 	"github.com/romashorodok/conferencing-platform/media-server/internal/pipeline"
 	"github.com/romashorodok/conferencing-platform/media-server/internal/room"
-	"github.com/romashorodok/conferencing-platform/media-server/pkg/protocol"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/service"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/sfu"
 	globalprotocol "github.com/romashorodok/conferencing-platform/pkg/protocol"
@@ -28,7 +26,7 @@ type CreateTestRoom_Params struct {
 func CreateTestRoom(params CreateTestRoom_Params) {
 	log.Println("Creating test room")
 	roomID := "test"
-	room, err := params.RoomService.CreateRoom(&protocol.RoomCreateOption{
+	room, err := params.RoomService.CreateRoom(&room.RoomCreateOption{
 		MaxParticipants: 0,
 		RoomID:          &roomID,
 	})
@@ -74,7 +72,6 @@ func main() {
 			identity.NewTokenService,
 			identity.NewIdentityService,
 
-			globalprotocol.AsHttpController(ingress.NewWhipController),
 			globalprotocol.AsHttpController(room.NewRoomController),
 			globalprotocol.AsHttpController(identity.NewIdentityController),
 		),

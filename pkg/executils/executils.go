@@ -7,8 +7,6 @@ import (
 	"go.uber.org/atomic"
 )
 
-// ParallelExec will executes the given function with each element of vals, if len(vals) >= parallelThreshold,
-// will execute them in parallel, with the given step size. So fn must be thread-safe.
 func ParallelExec[T any](vals []T, parallelThreshold, step uint64, fn func(T)) {
 	if uint64(len(vals)) < parallelThreshold {
 		for _, v := range vals {
@@ -17,7 +15,6 @@ func ParallelExec[T any](vals []T, parallelThreshold, step uint64, fn func(T)) {
 		return
 	}
 
-	// parallel - enables much more efficient multi-core utilization
 	start := atomic.NewUint64(0)
 	end := uint64(len(vals))
 

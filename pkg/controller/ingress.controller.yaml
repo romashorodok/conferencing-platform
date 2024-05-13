@@ -1,6 +1,0 @@
-package: ingress 
-generate:
-  echo-server: true
-  embedded-spec: true
-  models: true
-output: ingress/ingress.go
