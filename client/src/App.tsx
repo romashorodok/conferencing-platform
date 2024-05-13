@@ -695,43 +695,17 @@ function Room() {
 
 function App() {
   const { startFaceDetection, startNormal } = useContext(MediaStreamContext)
-  const [count, setCount] = useState(0)
-
-  useEffect(() => console.log(count), [count])
 
   return (
-    <>
-      <button onClick={() => startNormal()}>Normal</button>
-      <button onClick={() => startFaceDetection()}>Face detection</button>
+    <div className="flex flex-col">
+      <h1 className="text-lg">Test your camera or select room</h1>
 
       <CameraComponent />
-      <Room />
-
-      <img id="image" src={reactLogo} className="logo react" alt="React logo" />
-      <div>
-        <h3> Remote Video </h3>
-        <div id="remoteVideos"></div> <br />
-
-        <a href="https://vitejs.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
+      <button
+        className="Button box-border w-[120px] inline-flex h-[35px] items-center justify-center rounded-[4px] px-[15px] font-medium leading-none cursor-pointer focus:outline-none mt-[10px]" onClick={() => startNormal()}>Normal</button>
+      <button
+        className="Button box-border w-[120px] inline-flex h-[35px] items-center justify-center rounded-[4px] px-[15px] font-medium leading-none cursor-pointer focus:outline-none mt-[10px]" onClick={() => startFaceDetection()}>Face detection</button>
+    </div>
   )
 }
 
