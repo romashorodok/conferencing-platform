@@ -129,9 +129,10 @@ func NewTrackContextMessage[F TrackContextEvent](evt F) TrackContextMessage[any]
 }
 
 type TrackContext struct {
-	webrtc   *webrtc.API
-	id       string
-	streamID string
+	webrtc       *webrtc.API
+	id           string
+	streamID     string
+	SourcePeerID string
 
 	rid         string
 	ssrc        webrtc.SSRC
@@ -452,11 +453,12 @@ func (t *TrackContext) TrackObserverUnref(obs <-chan TrackContextMessage[any]) {
 }
 
 type NewTrackContextParams struct {
-	ID          string
-	StreamID    string
-	RID         string
-	SSRC        webrtc.SSRC
-	PayloadType webrtc.PayloadType
+	SourcePeerID string
+	ID           string
+	StreamID     string
+	RID          string
+	SSRC         webrtc.SSRC
+	PayloadType  webrtc.PayloadType
 
 	CodecParams webrtc.RTPCodecParameters
 	Kind        webrtc.RTPCodecType
@@ -480,12 +482,13 @@ func NewTrackContext(ctx context.Context, params NewTrackContextParams) *TrackCo
 	c, cancel := context.WithCancel(ctx)
 
 	trackContext := &TrackContext{
-		webrtc:      params.API,
-		id:          params.ID,
-		streamID:    params.StreamID,
-		rid:         params.RID,
-		ssrc:        params.SSRC,
-		payloadType: params.PayloadType,
+		SourcePeerID: params.SourcePeerID,
+		webrtc:       params.API,
+		id:           params.ID,
+		streamID:     params.StreamID,
+		rid:          params.RID,
+		ssrc:         params.SSRC,
+		payloadType:  params.PayloadType,
 
 		codecParams:    params.CodecParams,
 		codecKind:      params.Kind,

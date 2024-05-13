@@ -86,12 +86,9 @@ func (s *Subscriber) WatchTrackAttach() {
 				if err != nil {
 					switch err {
 					case ErrNotFoundTransceiver:
-						transiv, err = s.peerConnection.AddTransceiverFromTrack(
-							t.GetLocalTrack(), webrtc.RTPTransceiverInit{
-								Direction: webrtc.RTPTransceiverDirectionSendonly,
-							},
-						)
-						if err != nil {
+						if transiv, err = s.peerConnection.AddTransceiverFromKind(t.codecKind, webrtc.RTPTransceiverInit{
+							Direction: webrtc.RTPTransceiverDirectionSendonly,
+						}); err != nil {
 							log.Printf("Ignore %s track for sub %s. Unable create transiver track. Err:%s", t.ID(), s.peerId, err)
 							ack.Result <- err
 							close(ack.Result)
@@ -103,34 +100,49 @@ func (s *Subscriber) WatchTrackAttach() {
 						ack.Result <- err
 						close(ack.Result)
 						s.attachTrackMu.Unlock()
-					}
-				} else {
-					sender, err := s.webrtc.NewRTPSender(t.GetLocalTrack(), s.peerConnection.SCTP().Transport())
-					if err != nil {
-						ack.Result <- err
-						close(ack.Result)
-						s.attachTrackMu.Unlock()
-					}
-
-					if err = transiv.SetSender(sender, t.GetLocalTrack()); err != nil {
-						ack.Result <- err
-						close(ack.Result)
-						s.attachTrackMu.Unlock()
+						continue
 					}
 				}
 
-				// transiv, err := s.peerConnection.AddTransceiverFromTrack(
-				// 	t.GetLocalTrack(), webrtc.RTPTransceiverInit{
-				// 		Direction: webrtc.RTPTransceiverDirectionSendonly,
-				// 	},
-				// )
-				// if err != nil {
-				// 	log.Printf("Ignore %s track for sub %s. Unable create transiver track. Err:%s", t.ID(), s.peerId, err)
-				// 	ack.Result <- err
-				// 	close(ack.Result)
-				// 	s.attachTrackMu.Unlock()
-				// 	continue
-				// }
+				var sender *webrtc.RTPSender
+				var trackSender webrtc.TrackLocal
+
+				switch t.codecKind {
+				case webrtc.RTPCodecTypeAudio:
+					if s.peerId == t.SourcePeerID {
+						log.Printf("[Track %s] found loopback audio send stub for %s",
+							t.ID(),
+							t.SourcePeerID,
+						)
+						if trackSender, err = webrtc.NewTrackLocalStaticSample(
+							t.codecParams.RTPCodecCapability,
+							t.ID(),
+							t.streamID,
+						); err != nil {
+							break
+						}
+						sender, err = s.webrtc.NewRTPSender(trackSender, s.peerConnection.SCTP().Transport())
+						break
+					}
+
+					fallthrough
+				default:
+					trackSender = t.GetLocalTrack()
+					sender, err = s.webrtc.NewRTPSender(trackSender, s.peerConnection.SCTP().Transport())
+				}
+
+				if err != nil {
+					ack.Result <- err
+					close(ack.Result)
+					s.attachTrackMu.Unlock()
+					continue
+				}
+
+				if err = transiv.SetSender(sender, trackSender); err != nil {
+					ack.Result <- err
+					close(ack.Result)
+					s.attachTrackMu.Unlock()
+				}
 
 				track = NewActiveTrackContext(transiv, transiv.Sender(), t)
 				s.MapStoreTrack(t.ID(), track)
@@ -142,28 +154,9 @@ func (s *Subscriber) WatchTrackAttach() {
 				}))
 			} else {
 				log.Printf("track %s already exists", track.trackContext.ID())
-				// sender := track.LoadSender()
 
-				// if sender != nil {
-				// 	_ = s.peerConnection.RemoveTrack(sender)
-				// }
-				//
-				// sender, err := s.peerConnection.AddTrack(track.trackContext.GetLocalTrack())
-				// if err != nil {
-				// 	log.Println(err)
-				// 	ack.Result <- err
-				// 	close(ack.Result)
-				// 	return
-				// }
-				//
-				// track.StoreSender(sender)
-				//
 				ack.Result <- nil
 				close(ack.Result)
-
-				// s.dispatch(NewSubscriberMessage(SubscriberTrackAttached{
-				// 	track: track,
-				// }))
 			}
 
 			s.attachTrackMu.Unlock()
@@ -192,7 +185,6 @@ func (s *Subscriber) WatchTrackDetach() {
 
 			t = track.trackContext
 			s.MapDeleteTrack(t.ID())
-			// delete(s.tracks, t.ID())
 
 			sender := track.LoadSender()
 			if sender == nil {
@@ -225,7 +217,6 @@ func (s *Subscriber) WatchTrackDetach() {
 	}
 }
 
-// Create track context with default RTP sender
 func (s *Subscriber) Track(streamID string, t *webrtc.TrackRemote, recv *webrtc.RTPReceiver, filter *Filter) *TrackContext {
 	s.tracksMu.Lock()
 	defer s.tracksMu.Unlock()
@@ -236,11 +227,12 @@ func (s *Subscriber) Track(streamID string, t *webrtc.TrackRemote, recv *webrtc.
 	}
 
 	return NewTrackContext(s.ctx, NewTrackContextParams{
-		ID:          id,
-		StreamID:    streamID,
-		RID:         t.RID(),
-		SSRC:        t.SSRC(),
-		PayloadType: t.PayloadType(),
+		SourcePeerID: s.peerId,
+		ID:           id,
+		StreamID:     streamID,
+		RID:          t.RID(),
+		SSRC:         t.SSRC(),
+		PayloadType:  t.PayloadType(),
 
 		CodecParams: t.Codec(),
 		Kind:        t.Kind(),
@@ -251,8 +243,6 @@ func (s *Subscriber) Track(streamID string, t *webrtc.TrackRemote, recv *webrtc.
 		PeerConnection: s.peerConnection,
 		API:            s.webrtc,
 	})
-
-	// return s.AttachTrack(trackContext)
 }
 
 func (s *Subscriber) AttachTrack(t *TrackContext) watchTrackAck {

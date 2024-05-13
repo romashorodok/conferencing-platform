@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 
@@ -38,6 +39,16 @@ func CreateTestRoom(params CreateTestRoom_Params) {
 	_ = room
 }
 
+type CreateAdminUser_Params struct {
+	fx.In
+
+	IdentityService *identity.IdentityService
+}
+
+func CreateAdminUser(params CreateAdminUser_Params) {
+	_, _ = params.IdentityService.SignUp(context.Background(), "admin", "admin")
+}
+
 var _ sfu.Pipeline = (*pipeline.CannyFilter)(nil)
 
 func NewPipelinesAllocatorsContext() *sfu.AllocatorsContext {
@@ -70,6 +81,7 @@ func main() {
 
 		fx.Module("test-room",
 			fx.Invoke(CreateTestRoom),
+			fx.Invoke(CreateAdminUser),
 		),
 
 		service.LoggerModule,
