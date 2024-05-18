@@ -4,8 +4,7 @@ import { AudioControlLarge, CameraComponent, Filter, RoomStream, VideoControlLar
 import { MediaStreamContext } from "../../rtc/MediaStreamProvider"
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { useSize } from "../../utils/resize";
-import * as Dialog from '@radix-ui/react-dialog';
-import { CloseIcon, DialogWindow, GalleryIcon, SettingsIcon, StopIcon, UserIcon } from "../../AppLayout";
+import { DialogWindow, GalleryIcon, SettingsIcon, StopIcon, UserIcon } from "../../AppLayout";
 
 type videoFiltersMenuProps = {
   videoFilterList: Array<Filter>

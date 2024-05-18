@@ -13,6 +13,7 @@ type MediaStreamContextType = {
 
 export const MediaStreamContext = createContext<MediaStreamContextType>(undefined!)
 
+// Firefox only
 async function videoScaleCanvas(streamPromise: Promise<MediaStream>, width: number, height: number): Promise<MediaStream> {
   const video = document.createElement('video');
   video.width = width
@@ -48,19 +49,54 @@ async function videoScaleCanvas(streamPromise: Promise<MediaStream>, width: numb
 
 let videoStream: Promise<MediaStream>
 if (isChromiumBased()) {
+  // const downScaleWorker = new Worker(new URL('workers/downScale.js', import.meta.url), { type: 'classic' })
+
   // NOTE: Selecting video may be work only on localhost
   const inbound = navigator.mediaDevices.getUserMedia({
     video: {
       width: 320,
       height: 180,
     },
-    // video: true,
     // video: {
     //   width: { exact: 320 },
     //   height: { exact: 180 }
     // },
   })
+
   videoStream = inbound
+
+  // videoStream = inbound.then(async defaultStream => {
+  //   const stream = defaultStream.clone()
+  //   stream.getTracks().forEach(t => {
+  //     t.enabled = true
+  //     const track = t.clone()
+  //     stream.removeTrack(t)
+  //     stream.addTrack(track)
+  //   })
+  //
+  //   const [track] = stream.getVideoTracks()
+  //   // NOTE: need remove origin track it will be replaced by sink track
+  //   stream.removeTrack(track)
+  //
+  //   const { readable } = new MediaStreamTrackProcessor({ track })
+  //   const localTrack = new MediaStreamTrackGenerator({ kind: 'video' })
+  //   const { writable } = localTrack
+  //
+  //   downScaleWorker.postMessage({
+  //     width: 320,
+  //     height: 180,
+  //     readable,
+  //     writable,
+  //   }, [readable, writable])
+  //
+  //   stream.addTrack(localTrack)
+  //
+  //   stream.getTracks().forEach(t => t.enabled = false)
+  //
+  //   return stream
+  // })
+
+  // videoStream = videoScaleCanvas(inbound, 320, 180)
 } else if (isFireFox()) {
   // NOTE: Firefox not support low resolutions
   // This lead that I need high performance, when I do the filter of the stream

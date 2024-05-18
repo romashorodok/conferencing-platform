@@ -86,4 +86,7 @@ WORKDIR /app
 COPY nginx.templ.conf .
 COPY certs.sh . 
 
+ENV BASE64_FULL_CHAIN=
+ENV BASE64_PRIV_KEY=
+
 CMD ["bash", "-c", "chmod +x /app/certs.sh && source /app/certs.sh && echo $SSL_CERTIFICATE && envsubst '$DOMAIN $SSL_CERTIFICATE $SSL_CERTIFICATE_KEY' < /app/nginx.templ.conf > /app/nginx.conf && cat /app/nginx.conf && nginx -c /app/nginx.conf -g 'daemon off;'"]

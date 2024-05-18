@@ -1,6 +1,4 @@
 import { PropsWithChildren, useCallback, useContext, useEffect, useRef, useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
 import cameraSvg from './assets/camera.svg'
 import microphoneSvg from './assets/microphone.svg'
 import infoSvg from './assets/info.svg'
@@ -679,19 +677,6 @@ export function RoomStream({
     </div>
   )
 }
-
-function Room() {
-  const { roomMediaList } = useRoom()
-
-  return (
-    <div>
-      {Object.entries(roomMediaList).map(([id, { stream }]) => (
-        <RoomStream key={id} mediaStream={stream} />
-      ))}
-    </div>
-  )
-}
-
 
 function App() {
   const { startFaceDetection, startNormal } = useContext(MediaStreamContext)
