@@ -195,7 +195,7 @@ function SignInDialog({ openDialog = false }) {
   const button = <button onClick={() => setOpen(true)}>SignUp</button>
 
 
-  return <DialogWindow open={open} setOpen={setOpen} button={button} title={<p>Sign Up</p>} description={<></>} content={<SignInForm setOpen={setOpen} />} />
+  return <DialogWindow open={open} setOpen={setOpen} button={button} title={<p>Sign In</p>} description={<></>} content={<SignInForm setOpen={setOpen} />} />
 }
 
 function SignOutButton() {

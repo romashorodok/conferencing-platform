@@ -45,9 +45,9 @@ function AuthWall({ children }: PropsWithChildren) {
 
     return <div className="flex min-h-screen min-w-screen flex-col m-auto justify-center place-items-center">
       <div className="w-[200px]">
-        <h1>Sign Up to continue!</h1>
+        <h1>Sign In to continue!</h1>
 
-        <DialogWindow open={open} setOpen={setOpen} button={button} title={<p>Sign Up</p>} description={<></>} content={<SignInForm setOpen={setOpen} />} />
+        <DialogWindow open={open} setOpen={setOpen} button={button} title={<p>Sign In</p>} description={<></>} content={<SignInForm setOpen={setOpen} />} />
       </div>
     </div>
   }
