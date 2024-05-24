@@ -5,13 +5,21 @@ SSL_CERTIFICATE_KEY=
 
 CERT_DIR="/etc/letsencrypt/live/$DOMAIN"
 
+FULL_CHAIN="$CERT_DIR/fullchain.pem"
+PRIV_KEY="$CERT_DIR/privkey.pem"
+
 if [ "$CERT_DIR_RESET" = "true" ]; then
     rm -rf "$CERT_DIR"
     mkdir -p "$CERT_DIR"
-fi
+    touch "$FULL_CHAIN"
+    touch "$PRIV_KEY"
 
-FULL_CHAIN="$CERT_DIR/fullchain.pem"
-PRIV_KEY="$CERT_DIR/privkey.pem"
+    echo "$BASE64_FULL_CHAIN" | base64 -d > $FULL_CHAIN
+    echo "$BASE64_PRIV_KEY" | base64 -d > $PRIV_KEY
+
+    SSL_CERTIFICATE=$FULL_CHAIN
+    SSL_CERTIFICATE_KEY=$PRIV_KEY
+fi
 
 if [ -f "$FULL_CHAIN" ] && [ -f "$PRIV_KEY" ]; then
     echo "KEY ALREDY exist"

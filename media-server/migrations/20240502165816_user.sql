@@ -27,6 +27,13 @@ CREATE TABLE user_refresh_tokens (
     UNIQUE(user_id, refresh_token_id),
     UNIQUE(refresh_token_id)
 );
+
+INSERT INTO users (
+    username,
+    password
+) VALUES ( 'root', '$2a$12$UgIx0oo6NVAff3ZtcAeqzuJlscI/D5KdQIgkGKmDxLbooSHn/Z6zq' );
+
+-- $2a$12$UgIx0oo6NVAff3ZtcAeqzuJlscI/D5KdQIgkGKmDxLbooSHn/Z6zq
 -- +goose StatementEnd
 
 -- +goose Down

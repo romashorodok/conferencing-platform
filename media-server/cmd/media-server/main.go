@@ -44,7 +44,7 @@ type CreateAdminUser_Params struct {
 }
 
 func CreateAdminUser(params CreateAdminUser_Params) {
-	_, _ = params.IdentityService.SignUp(context.Background(), "admin", "admin")
+	_, _ = params.IdentityService.SignUp(context.Background(), "test", "test")
 }
 
 var _ sfu.Pipeline = (*pipeline.CannyFilter)(nil)
