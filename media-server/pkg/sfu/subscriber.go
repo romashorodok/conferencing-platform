@@ -34,10 +34,10 @@ type Subscriber struct {
 	tracks   sync.Map
 	tracksMu sync.Mutex
 
-	attachTrackMu        sync.Mutex
-	immediateAttachTrack chan watchTrackAck
-	detachTrackMu        sync.Mutex
-	immediateDetachTrack chan watchTrackAck
+	handleAttachTrackMu sync.Mutex
+	busAttachTrack      chan watchTrackAck
+	handleDetachTrackMu sync.Mutex
+	busDetachTrack      chan watchTrackAck
 
 	observers   atomic.Pointer[[]chan SubscriberMessage[any]]
 	observersMu sync.Mutex
@@ -66,13 +66,13 @@ func (s *Subscriber) MapForEachTrack(f func(key, value any) bool) {
 	s.tracks.Range(f)
 }
 
-func (s *Subscriber) WatchTrackAttach() {
+func (s *Subscriber) HandleTrackAttach() {
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
-		case ack := <-s.immediateAttachTrack:
-			s.attachTrackMu.Lock()
+		case ack := <-s.busAttachTrack:
+			s.handleAttachTrackMu.Lock()
 			t := ack.TrackContext
 
 			track, found := s.HasTrack(t.ID())
@@ -92,14 +92,14 @@ func (s *Subscriber) WatchTrackAttach() {
 							log.Printf("Ignore %s track for sub %s. Unable create transiver track. Err:%s", t.ID(), s.peerId, err)
 							ack.Result <- err
 							close(ack.Result)
-							s.attachTrackMu.Unlock()
+							s.handleAttachTrackMu.Unlock()
 							continue
 						}
 					default:
 						log.Printf("Ignore %s track for sub %s. Unable create transiver track. Err:%s", t.ID(), s.peerId, err)
 						ack.Result <- err
 						close(ack.Result)
-						s.attachTrackMu.Unlock()
+						s.handleAttachTrackMu.Unlock()
 						continue
 					}
 				}
@@ -134,14 +134,14 @@ func (s *Subscriber) WatchTrackAttach() {
 				if err != nil {
 					ack.Result <- err
 					close(ack.Result)
-					s.attachTrackMu.Unlock()
+					s.handleAttachTrackMu.Unlock()
 					continue
 				}
 
 				if err = transiv.SetSender(sender, trackSender); err != nil {
 					ack.Result <- err
 					close(ack.Result)
-					s.attachTrackMu.Unlock()
+					s.handleAttachTrackMu.Unlock()
 				}
 
 				track = NewActiveTrackContext(transiv, transiv.Sender(), t)
@@ -159,19 +159,19 @@ func (s *Subscriber) WatchTrackAttach() {
 				close(ack.Result)
 			}
 
-			s.attachTrackMu.Unlock()
+			s.handleAttachTrackMu.Unlock()
 		}
 	}
 }
 
-func (s *Subscriber) WatchTrackDetach() {
+func (s *Subscriber) HandleTrackDetach() {
 	for {
 		select {
 		case <-s.ctx.Done():
 			log.Println("peer context stop detach")
 			return
-		case ack := <-s.immediateDetachTrack:
-			s.detachTrackMu.Lock()
+		case ack := <-s.busDetachTrack:
+			s.handleDetachTrackMu.Lock()
 			t := ack.TrackContext
 			// log.Println("detach track | search for", t.ID())
 
@@ -212,7 +212,7 @@ func (s *Subscriber) WatchTrackDetach() {
 			}))
 
 			close(ack.Result)
-			s.detachTrackMu.Unlock()
+			s.handleDetachTrackMu.Unlock()
 		}
 	}
 }
@@ -247,13 +247,13 @@ func (s *Subscriber) Track(streamID string, t *webrtc.TrackRemote, recv *webrtc.
 
 func (s *Subscriber) AttachTrack(t *TrackContext) watchTrackAck {
 	ack := NewWatchTrackAck(t)
-	s.immediateAttachTrack <- ack
+	s.busAttachTrack <- ack
 	return ack
 }
 
 func (s *Subscriber) DetachTrack(t *TrackContext) watchTrackAck {
 	ack := NewWatchTrackAck(t)
-	s.immediateDetachTrack <- ack
+	s.busDetachTrack <- ack
 	return ack
 }
 

@@ -240,7 +240,8 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 
 			log.Println("Offer State recv,", offerState.StateHash)
 			if err := peerContext.CommitOfferState(offerState); err != nil {
-				return ctrl.wsError(w, err)
+				log.Println("[commit-offer-state] Commit offer state. Err:", err)
+				// return ctrl.wsError(w, err)
 			}
 
 		case "filter":

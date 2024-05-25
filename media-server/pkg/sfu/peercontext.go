@@ -178,7 +178,7 @@ type trackSpreader interface {
 	PeerPublishingSenders(peerTarget *PeerContext) map[string]OptionalSenderBox[any]
 }
 
-func (p *PeerContext) WatchTrack(track *ActiveTrackContext) {
+func (p *PeerContext) ObserveTrack(track *ActiveTrackContext) {
 	t := track.trackContext
 	bus := t.TrackObserver()
 	defer t.TrackObserverUnref(bus)
@@ -215,7 +215,7 @@ func (p *PeerContext) WatchTrack(track *ActiveTrackContext) {
 	}
 }
 
-func (p *PeerContext) WatchSubscriber(sub *Subscriber) {
+func (p *PeerContext) ObserveSubscriber(sub *Subscriber) {
 	bus := sub.Observer()
 	defer sub.ObserverUnref(bus)
 
@@ -228,7 +228,7 @@ func (p *PeerContext) WatchSubscriber(sub *Subscriber) {
 			switch evt := msg.Unbox().(type) {
 			case SubscriberTrackAttached:
 				log.Println("Track attached", evt.track.trackContext.ID())
-				go p.WatchTrack(evt.ActiveTrack())
+				go p.ObserveTrack(evt.ActiveTrack())
 				p.spreader.SanitizePeerSenders(p)
 			case SubscriberTrackDetached:
 				p.spreader.SanitizePeerSenders(p)
@@ -243,10 +243,10 @@ func (p *PeerContext) OnTrack() {
 	pubStreamID := uuid.NewString()
 	filter := FILTER_NONE
 
-	go p.Subscriber.WatchTrackAttach()
-	go p.Subscriber.WatchTrackDetach()
+	go p.Subscriber.HandleTrackAttach()
+	go p.Subscriber.HandleTrackDetach()
 
-	go p.WatchSubscriber(p.Subscriber)
+	go p.ObserveSubscriber(p.Subscriber)
 
 	onCloseTrack := func(err error, message ...any) {
 		onTrackMu.Unlock()
@@ -612,15 +612,15 @@ func (p *PeerContext) publishTrackDelete(t *PublishTrackContext) {
 func (p *PeerContext) newSubscriber() {
 	c, cancel := context.WithCancelCause(p.ctx)
 	subscriber := &Subscriber{
-		webrtc:               p.webrtc,
-		peerId:               p.peerID,
-		peerConnection:       p.peerConnection,
-		pipeAllocContext:     p.pipeAllocContext,
-		transceiverPool:      p.transceiverPool,
-		immediateAttachTrack: make(chan watchTrackAck),
-		immediateDetachTrack: make(chan watchTrackAck),
-		ctx:                  c,
-		cancel:               cancel,
+		webrtc:           p.webrtc,
+		peerId:           p.peerID,
+		peerConnection:   p.peerConnection,
+		pipeAllocContext: p.pipeAllocContext,
+		transceiverPool:  p.transceiverPool,
+		busAttachTrack:   make(chan watchTrackAck),
+		busDetachTrack:   make(chan watchTrackAck),
+		ctx:              c,
+		cancel:           cancel,
 	}
 	obs := make([]chan SubscriberMessage[any], 0)
 	subscriber.observers.Store(&obs)
