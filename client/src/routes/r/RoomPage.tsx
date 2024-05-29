@@ -1,11 +1,9 @@
-import { PropsWithChildren, createRef, useCallback, useContext, useEffect, useMemo, } from "react"
+import { PropsWithChildren, createRef, useContext, useEffect, useMemo, } from "react"
 import { useParams } from "react-router-dom"
 import { AudioControlLarge, RoomStream, VideoControlLarge, useRoom } from "../../App"
 import { MediaStreamContext } from "../../rtc/MediaStreamProvider"
 import { useSize } from "../../utils/resize";
 import { StopIcon, UserIcon } from "../../AppLayout";
-import { useAuthorizedFetch } from "../../rtc/AuthProvider";
-import { IDENTITY_SERVER } from "../../variables";
 
 type GridSize = {
   columns: number,

@@ -181,20 +181,12 @@ func (p *PeerContext) ObserveTrack(track *ActiveTrackContext) {
 	t := track.trackContext
 	bus := t.TrackObserver()
 	defer t.TrackObserverUnref(bus)
-	// defer log.Println("stop watch track. Peer", p.PeerID, "for track", track.trackContext.ID())
-	// log.Println("start watch track. Peer", p.PeerID, "for track", track.trackContext.ID())
 
 	for {
 		select {
 		case <-t.Done():
-			// log.Println("Watch track context doen for", t.ID())
 			p.Subscriber.DeleteTrack(track)
 			p.spreader.SanitizePeerSenders(p)
-
-			// p.Signal.DispatchOffer()
-			// ack := p.Subscriber.DetachTrack(t)
-			// err := <-ack.Result
-			// log.Println("track context done for err", err)
 			return
 		case msg := <-bus:
 			switch evt := msg.Unbox().(type) {
@@ -208,7 +200,6 @@ func (p *PeerContext) ObserveTrack(track *ActiveTrackContext) {
 				err := track.SwitchActiveTrackMedia(p.webrtc, p.peerConnection)
 				log.Println("On switch active track media", err)
 				p.spreader.SanitizePeerSenders(p)
-				// p.Signal.DispatchOffer()
 			}
 		}
 	}
@@ -276,7 +267,6 @@ func (p *PeerContext) OnTrack() {
 			}
 		}
 
-		// TODO: Remove this
 		TrackContextRegistry.Add(tctx)
 		defer TrackContextRegistry.Remove(tctx)
 
