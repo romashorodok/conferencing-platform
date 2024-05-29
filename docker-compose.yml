@@ -39,30 +39,30 @@ services:
         - action: rebuild
           path: pkg
           target: /app/pkg
-  # gateway:
-  #   build:
-  #     target: gateway
-  #     args:
-  #       DOMAIN: localhost
-  #       VITE_MEDIA_SERVER: https://localhost/api
-  #       VITE_MEDIA_SERVER_WS: wss://localhost/api
-  #       # VITE_MEDIA_SERVER_STUN: stun:stun.l.google.com:19302
-  #   environment:
-  #     CERT_DIR_RESET: false
-  #     BASE64_FULL_CHAIN:
-  #     BASE64_PRIV_KEY:
-  #   ports:
-  #     - 443:443
-  #     - 80:80
-  #   networks:
-  #     - bridge
-  #   volumes:
-  #       - /etc/letsencrypt
-  #   develop:
-  #     watch:
-  #       - action: sync+restart
-  #         path: certs.sh
-  #         target: /app/certs.sh
-  #       - action: sync+restart
-  #         path: nginx.templ.conf
-  #         target: /app/nginx.templ.conf
+  gateway:
+    build:
+      target: gateway
+      args:
+        DOMAIN: localhost
+        VITE_MEDIA_SERVER: https://localhost/api
+        VITE_MEDIA_SERVER_WS: wss://localhost/api
+        # VITE_MEDIA_SERVER_STUN: stun:stun.l.google.com:19302
+    environment:
+      CERT_DIR_RESET: false
+      BASE64_FULL_CHAIN:
+      BASE64_PRIV_KEY:
+    ports:
+      - 443:443
+      - 80:80
+    networks:
+      - bridge
+    volumes:
+        - /etc/letsencrypt
+    develop:
+      watch:
+        - action: sync+restart
+          path: certs.sh
+          target: /app/certs.sh
+        - action: sync+restart
+          path: nginx.templ.conf
+          target: /app/nginx.templ.conf

@@ -1,54 +1,9 @@
-import { PropsWithChildren, createRef, useContext, useEffect, useMemo, useState } from "react"
+import { PropsWithChildren, createRef, useContext, useEffect, useMemo, } from "react"
 import { useParams } from "react-router-dom"
-import { AudioControlLarge, CameraComponent, Filter, RoomStream, VideoControlLarge, useRoom } from "../../App"
+import { AudioControlLarge, RoomStream, VideoControlLarge, useRoom } from "../../App"
 import { MediaStreamContext } from "../../rtc/MediaStreamProvider"
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { useSize } from "../../utils/resize";
-import { DialogWindow, GalleryIcon, SettingsIcon, StopIcon, UserIcon } from "../../AppLayout";
-
-type videoFiltersMenuProps = {
-  videoFilterList: Array<Filter>
-  setVideoFilter: (filter: Filter) => Promise<void>
-};
-
-function VideoFiltersMenu({ videoFilterList, setVideoFilter }: videoFiltersMenuProps) {
-  const [selected, _] = useState<string | undefined>()
-
-  useEffect(() => {
-  }, [videoFilterList])
-
-  const onChangeVideoFilter = (filterIdx: string) => {
-    const idx = parseInt(filterIdx)
-    setVideoFilter(videoFilterList[idx])
-  }
-
-  return (
-    <Dropdown.Root>
-      <Dropdown.Trigger asChild>
-        <button className="Button cursor-pointer px-2">
-          <GalleryIcon className="w-[32px] h-[32px]" />
-        </button>
-      </Dropdown.Trigger>
-      <Dropdown.Portal>
-        <Dropdown.Content sideOffset={10} className={`Frame FrameShadow p-3 z-50`}>
-          <Dropdown.Separator />
-
-          <Dropdown.Label className="mb-5 ContextMenuLabel">Select video filter</Dropdown.Label>
-          <Dropdown.RadioGroup value={selected} onValueChange={onChangeVideoFilter}>
-            {videoFilterList.map((filter, idx) => (
-              <Dropdown.RadioItem className="Button my-2 p-2 cursor-pointer ContextMenuRadioItem" value={idx.toString()} key={idx}>
-                <Dropdown.ItemIndicator className="px-1">
-                  Active
-                </Dropdown.ItemIndicator>
-                {filter.name}
-              </Dropdown.RadioItem>
-            ))}
-          </Dropdown.RadioGroup>
-        </Dropdown.Content>
-      </Dropdown.Portal>
-    </Dropdown.Root>
-  )
-}
+import { StopIcon, UserIcon } from "../../AppLayout";
 
 type GridSize = {
   columns: number,
@@ -157,28 +112,6 @@ function GridLayout({
   )
 }
 
-function SettingsDialog() {
-  const [open, setOpen] = useState<boolean>(false)
-
-  const button =
-    <button className="Button cursor-pointer px-2" onClick={() => setOpen(true)}>
-      <SettingsIcon className="w-[32px] h-[32px]" />
-    </button>
-
-  const title = <p>User settings</p>
-
-  const content = (
-    <>
-      <CameraComponent />
-      <div className={`flex flex-row justify-center gap-4 flex-3 p-4`}>
-        <FaceDetectionButtons />
-      </div>
-    </>
-  )
-
-  return <DialogWindow button={button} open={open} setOpen={setOpen} title={title} content={content} description={<></>} />
-}
-
 export function FaceDetectionButtons() {
   const { startFaceDetection, startNormal } = useContext(MediaStreamContext)
 
@@ -201,7 +134,7 @@ type PageData = {
 
 function RoomPage() {
   const { roomID } = useParams<PageData>()
-  const { join, roomMediaList, videoFilterList, setVideoFilter } = useRoom()
+  const { join, roomMediaList, } = useRoom()
   const { onPageMountMediaStreamMutex } = useContext(MediaStreamContext)
 
   const roomMediaItems = useMemo(() => Object.entries(roomMediaList), [roomMediaList])
@@ -233,8 +166,6 @@ function RoomPage() {
       <div className={`flex flex-row justify-center gap-4 flex-3 p-4 z-50`}>
         <AudioControlLarge className={`ButtonShadow`} />
         <VideoControlLarge className={`ButtonShadow`} />
-        <VideoFiltersMenu videoFilterList={videoFilterList} setVideoFilter={setVideoFilter} />
-        <SettingsDialog />
       </div>
     </div>
   )

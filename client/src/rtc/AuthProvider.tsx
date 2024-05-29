@@ -157,20 +157,10 @@ export function AuthContextProvider({ children }: PropsWithChildren<{}>) {
   }, [tokenPair])
 
   useEffect(() => {
-    // const date = new Date()
-    // date.setFullYear(date.getFullYear() + 100)
-    // setCookie(__COOKIE_ACCESS_TOKEN, AccessTokenStub, {
-    //   expires: date,
-    // })
-    // setCookie(__COOKIE_REFRESH_TOKEN, RefreshTokenStub, {
-    //   expires: date,
-    // })
-
     __setTokenPair({
       accessToken: cookies[__COOKIE_ACCESS_TOKEN] || undefined,
       refreshToken: cookies[__COOKIE_REFRESH_TOKEN] || undefined,
     })
-    console.log(cookies)
   }, [])
 
   const setTokenPair = async (accessToken: string | undefined, refreshToken: string | undefined) => {

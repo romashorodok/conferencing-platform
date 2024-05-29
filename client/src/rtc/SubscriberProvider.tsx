@@ -13,14 +13,6 @@ function SubscriberContextProvider({ children }: PropsWithChildren<{}>) {
   const [peerContext, setPeerContext] = useState<RTCEngine | null>(null)
   const { setRoomMediaStream } = useContext(RoomMediaStreamListContext)
 
-  // const [peerContext, setPeerContext] = useState<RTCEngine | null>(new RTCEngine({
-  //   iceServers: [
-  //     // {
-  //     // urls: 'stun:stun.l.google.com:19302'
-  //     // },
-  //   ]
-  // }))
-
   useEffect(() => {
     return () => {
       if (peerContext) {

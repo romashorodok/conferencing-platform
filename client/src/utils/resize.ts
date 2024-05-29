@@ -1,5 +1,3 @@
-// Origin
-// https://github.com/livekit/components-js/blob/e55f44efa2a45e68bb9400b4cfb6075721406a0a/packages/react/src/hooks/internal/useResizeObserver.ts#L1
 import * as React from 'react';
 
 export const useLatest = <T extends any>(current: T) => {
@@ -112,7 +110,6 @@ export const useSize = (target: React.RefObject<HTMLDivElement>) => {
     (entry: ResizeObserverEntry) => setSize(entry.contentRect),
     [],
   );
-  // Where the magic happens
   useResizeObserver(target, resizeCallback);
   return size;
 };
