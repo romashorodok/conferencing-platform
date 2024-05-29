@@ -3,6 +3,7 @@ package identity
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 
@@ -51,6 +52,32 @@ func IdentityWallFactoryMiddleware(resolver identityResolver) MiddlewareFactory 
 			if err != nil {
 				return c.JSON(http.StatusUnauthorized, &errResponse{
 					Message: fmt.Sprintf("Identity resolving failed. Err: %s", err),
+				})
+			}
+
+			c.Set(_TOKEN_CONTEXT_KEY, token)
+
+			return next(c)
+		}
+	}
+}
+
+func IdentityHttpOnlyCookieWallFactoryMiddleware(resolver identityResolver) MiddlewareFactory {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+            log.Println(c.Cookies())
+			refreshToken, err := c.Cookie(REFRESH_TOKEN_HTTP_ONLY_COOKIE_NAME)
+            log.Println(refreshToken, "found refresh token")
+			if err != nil {
+				return c.JSON(http.StatusUnauthorized, &errResponse{
+					Message: fmt.Sprintf("Missing refresh token cookie. Err: %s", err),
+				})
+			}
+
+			token, err := resolver.TokenIdentity(c.Request().Context(), refreshToken.Value)
+			if err != nil {
+				return c.JSON(http.StatusUnauthorized, &errResponse{
+					Message: fmt.Sprintf("Identity resolving failed from cookie. Err: %s", err),
 				})
 			}
 

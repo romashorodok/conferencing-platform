@@ -5,12 +5,11 @@ import { useCookies } from "react-cookie";
 
 type TokenPair = {
   accessToken: string | undefined
-  refreshToken: string | undefined
 }
 
 type AuthContextType = {
   tokenPair: TokenPair | undefined,
-  setTokenPair: (accessToken: string | undefined, refreshToken: string | undefined) => Promise<any>
+  setTokenPair: (accessToken: string | undefined) => Promise<any>
 };
 
 const AuthContext = createContext<AuthContextType>(undefined as never)
@@ -27,6 +26,7 @@ export function useAuth() {
         username,
         password,
       }),
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
       }
@@ -36,15 +36,15 @@ export function useAuth() {
       throw resp
     }
 
-    const { access_token = undefined, refresh_token = undefined } = await resp.json()
+    const { access_token = undefined } = await resp.json()
 
-    if (!access_token || !refresh_token) {
+    if (!access_token) {
       throw new Response(JSON.stringify({
         message: "Something goes wrong"
       }))
     }
 
-    await setTokenPair(access_token, refresh_token)
+    await setTokenPair(access_token)
 
     return resp
   }
@@ -52,15 +52,15 @@ export function useAuth() {
   const signOut = async () => {
     // TODO: Add server request
 
-    setTokenPair(undefined, undefined)
+    setTokenPair(undefined)
   }
 
   const authenticated = useMemo<boolean>(() => {
     if (!tokenPair) return false
 
-    const { accessToken = undefined, refreshToken = undefined } = tokenPair
+    const { accessToken = undefined } = tokenPair
 
-    if (!accessToken || !refreshToken) return false
+    if (!accessToken) return false
 
     return true
   }, [tokenPair])
@@ -85,10 +85,11 @@ export function useAuthorizedFetch() {
   const { tokenPair, setTokenPair } = useContext(AuthContext)
 
   const __fetch = useCallback(async (url: string, init?: FetchRequestInit) => {
-    if (!tokenPair || !setTokenPair) return
-    if (!tokenPair?.accessToken || !tokenPair.refreshToken) {
-      console.warn(`Trying access authorized fetch by unauthorized identity request url: ${url}, init: ${init}`)
-      return
+    if (!tokenPair || !setTokenPair) {
+      throw Error("Empty identity")
+    }
+    if (!tokenPair?.accessToken) {
+      throw Error(`Trying access authorized fetch by unauthorized identity request url: ${url}, init: ${init}`)
     }
 
     if (!init) {
@@ -96,6 +97,7 @@ export function useAuthorizedFetch() {
     } else {
       if (!init.headers) {
         init.headers = {}
+        init.credentials = 'include'
       }
     }
 
@@ -119,15 +121,13 @@ export function useAuthorizedFetch() {
         case StatusCode.Unauthorized:
           fetch(`${IDENTITY_SERVER_VERIFY_TOKEN}`, {
             method: 'POST',
-            headers: {
-              Authorization: `Bearer ${tokenPair.refreshToken}`
-            },
+            credentials: 'include',
           }).then(r => r.json())
             .then(r => {
-              const { access_token = undefined, refresh_token = undefined } = r
-              setTokenPair(access_token, refresh_token)
+              const { access_token = undefined } = r
+              setTokenPair(access_token)
             })
-            .catch(() => setTokenPair(undefined, undefined))
+            .catch(() => setTokenPair(undefined,))
       }
 
       return resp
@@ -142,32 +142,23 @@ export function useAuthorizedFetch() {
 }
 
 const __COOKIE_ACCESS_TOKEN = "__access_token"
-const __COOKIE_REFRESH_TOKEN = "__refresh_token"
-
-// const AccessTokenStub = "eyJhbGciOiJSUzI1NiIsImtpZCI6IjAzYjc2ZTM1LTE3MDktNGIxYS1hOTVjLTExOWUxOTRiZDJjNiIsInR5cCI6IkpXVCJ9.eyJhdWQiOlsiY2FuOmpvaW4iXSwiZXhwIjoxNzE1MTA4NTE3LCJpc3MiOiIwLjAuMC4wIiwic3ViIjoibXl1c2VyMTIzNDU2MDgiLCJ0b2tlbjp1c2UiOiJhY2Nlc3NfdG9rZW4iLCJ1c2VyOmlkIjoiNDU3NDBjMDEtODA3ZC00OTRhLWI5MjgtYmNmODIyN2JmYWJmIn0.jY9RF5L7MIioqsR1AZSQv-0xKLnzrKGgMjfCx2kdxj_a99PNUZKOfR3zXLNPmomL3DM-I3EiQOdsHS-lrVPCxS0FWeIT94LB8cs8KTsWGI7t7hd-TqyyLgnEXia8ySmwZtl2umKWJVPOpcAMw4K-WPoY7sseTuZ9fHo_AhYHvVERVpEX288nGDlRCYsh45KglZqCJ25tSv38lGPvEtxGvvjnE4Wo8GITEt-oC9-JfvHSM30N9tjFBHCE9KLgGbzf3bghoj_GmOAfMJkveknITW1Nlf6nE3_Oua5xVLWoGvc0HUxSVlHgL9RH_GT7exGr2h3DxMkX7jXtJv_8ly2IMA"
-//
-// const RefreshTokenStub = "eyJhbGciOiJSUzI1NiIsImtpZCI6IjVmYzQ4ODBiLTBiNzktNGZiMi05NmQ4LTIzNmViYThmZmMyYyIsInR5cCI6IkpXVCJ9.eyJhdWQiOlsiY2FuOmpvaW4iXSwiZXhwIjoxNzQ2OTIyMTAyLCJpc3MiOiIwLjAuMC4wIiwic3ViIjoibXl1c2VyMTIzNDU2MDgiLCJ0b2tlbjp1c2UiOiJyZWZyZXNoX3Rva2VuIiwidXNlcjppZCI6IjQ1NzQwYzAxLTgwN2QtNDk0YS1iOTI4LWJjZjgyMjdiZmFiZiJ9.C6DJi5tyX5kSKAkjASq6gIqSxjIeH5skiZ2b_kJ7NX-JSiNzjUsOP1O1rOD7ti_pWOenL0Xkx36Q9_cFST4A82LhmLx27E06BumsUQLCosRbBf0oyxkphgVjemxFJOclg1-Kk9QiHvdjbA00NWGxtV4r-Ta3VP63TQPeJI5xNJp5fjEJJ8OyahTyn4iRyPP4dxne7r7EeIWc3jmYvvVJjMAkSB7YRFnosUyF3msHjq8JRa3AOBKIRz9ZU7ghvXfLOPfWZu8a1k53IIbFDiC6ercnALJ1lqmRUpWcXqWu_JlNE_mERqxJp3YXHwmbMYMWcdMCDBMFy487wQv8NJD9QA"
 
 export function AuthContextProvider({ children }: PropsWithChildren<{}>) {
   const [tokenPair, __setTokenPair] = useState<TokenPair>()
-  const [cookies, setCookie, removeCookie] = useCookies([__COOKIE_ACCESS_TOKEN, __COOKIE_REFRESH_TOKEN])
+  const [cookies, setCookie, removeCookie] = useCookies([__COOKIE_ACCESS_TOKEN,])
 
   useEffect(() => {
     console.log("tokenPair", tokenPair)
   }, [tokenPair])
 
   useEffect(() => {
-    __setTokenPair({
-      accessToken: cookies[__COOKIE_ACCESS_TOKEN] || undefined,
-      refreshToken: cookies[__COOKIE_REFRESH_TOKEN] || undefined,
-    })
+    __setTokenPair({ accessToken: cookies[__COOKIE_ACCESS_TOKEN] || undefined, })
   }, [])
 
-  const setTokenPair = async (accessToken: string | undefined, refreshToken: string | undefined) => {
-    if (!accessToken || !refreshToken) {
-      console.warn(`Reset token pair identity accessToken: ${accessToken}, refreshToken: ${refreshToken}`)
+  const setTokenPair = async (accessToken: string | undefined) => {
+    if (!accessToken) {
+      console.warn(`Reset token pair identity accessToken: ${accessToken}`)
       removeCookie(__COOKIE_ACCESS_TOKEN)
-      removeCookie(__COOKIE_REFRESH_TOKEN)
       document.cookie = ""
       __setTokenPair(undefined)
       return
@@ -179,16 +170,10 @@ export function AuthContextProvider({ children }: PropsWithChildren<{}>) {
     setCookie(__COOKIE_ACCESS_TOKEN, accessToken, {
       expires: date,
     })
-    setCookie(__COOKIE_REFRESH_TOKEN, refreshToken, {
-      expires: date,
-    })
 
-    __setTokenPair({
-      accessToken,
-      refreshToken,
-    })
+    __setTokenPair({ accessToken, })
 
-    console.log("Refresh token pair", accessToken, refreshToken)
+    console.log("Refresh token pair", accessToken)
   }
 
   return (

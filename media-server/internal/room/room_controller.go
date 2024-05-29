@@ -15,6 +15,7 @@ import (
 	"github.com/gorilla/websocket"
 	echo "github.com/labstack/echo/v4"
 	webrtc "github.com/pion/webrtc/v4"
+	"github.com/romashorodok/conferencing-platform/media-server/internal/identity"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/rtpstats"
 	"github.com/romashorodok/conferencing-platform/media-server/pkg/sfu"
 	"github.com/romashorodok/conferencing-platform/pkg/controller/room"
@@ -46,6 +47,7 @@ type roomController struct {
 	logger           *slog.Logger
 	peerConnectionMu sync.Mutex
 	roomNotifier     *RoomNotifier
+	identityService  *identity.IdentityService
 }
 
 type filterData struct {
@@ -255,6 +257,8 @@ func (ctrl *roomController) RoomControllerRoomCreate(ctx echo.Context) error {
 	return ctx.JSON(http.StatusCreated, room.Info())
 }
 
+const baseURL = ""
+
 func (ctrl *roomController) Resolve(c *echo.Echo) error {
 	go ctrl.roomNotifier.OnUpdateRooms(context.Background(), func(w *wsutils.ThreadSafeWriter) {
 		w.WriteJSON(&websocketMessage{
@@ -268,7 +272,21 @@ func (ctrl *roomController) Resolve(c *echo.Echo) error {
 		return err
 	}
 	spec.Servers = nil
-	room.RegisterHandlers(c, ctrl)
+
+	middlewares := []echo.MiddlewareFunc{
+		echo.MiddlewareFunc(identity.IdentityWallFactoryMiddleware(ctrl.identityService)),
+	}
+
+	wrapper := room.ServerInterfaceWrapper{
+		Handler: ctrl,
+	}
+
+	c.GET(baseURL+"/rooms", wrapper.RoomControllerRoomList, middlewares...)
+	c.POST(baseURL+"/rooms", wrapper.RoomControllerRoomCreate, middlewares...)
+
+	c.GET(baseURL+"/rooms-notifier", wrapper.RoomControllerRoomNotifier)
+	c.GET(baseURL+"/rooms/:room_id", wrapper.RoomControllerRoomJoin)
+
 	return nil
 }
 
@@ -281,11 +299,12 @@ type newRoomController_Params struct {
 	fx.In
 	Lifecycle fx.Lifecycle
 
-	RoomService  *RoomService
-	API          *webrtc.API
-	Logger       *slog.Logger
-	Stats        chan *rtpstats.RtpStats
-	RoomNotifier *RoomNotifier
+	RoomService     *RoomService
+	API             *webrtc.API
+	Logger          *slog.Logger
+	Stats           chan *rtpstats.RtpStats
+	RoomNotifier    *RoomNotifier
+	IdentityService *identity.IdentityService
 }
 
 func NewRoomController(params newRoomController_Params) *roomController {
@@ -298,6 +317,7 @@ func NewRoomController(params newRoomController_Params) *roomController {
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
-		roomNotifier: params.RoomNotifier,
+		roomNotifier:    params.RoomNotifier,
+		identityService: params.IdentityService,
 	}
 }

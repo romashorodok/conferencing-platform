@@ -2,6 +2,7 @@ import { PropsWithChildren, createContext, useEffect, useState } from "react";
 import { debounce } from "../utils/debounce";
 import { EventEmitter } from 'events';
 import { MEDIA_SERVER, MEDIA_SERVER_WS } from "../variables";
+import { useAuthorizedFetch } from "../rtc/AuthProvider";
 
 enum RoomsNotifierEvent {
   UPDATE_ROOMS = 'update-rooms',
@@ -47,20 +48,19 @@ const ROOMS_ENDPOINT = `${MEDIA_SERVER}/rooms`
 
 const ROOM_NOTIFIER_ENDPOINT = `${MEDIA_SERVER_WS}/rooms-notifier`
 
-export async function createRoom(body: { roomId: string, maxParticipants: number }) {
-  return fetch(`${MEDIA_SERVER}/rooms`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
-}
-
 function RoomNotifierContextProvider({ children }: PropsWithChildren<{}>) {
   const [rooms, setRooms] = useState<Array<Room>>([])
   const [notifier,] = useState<RoomsNotifier>(new RoomsNotifier(ROOM_NOTIFIER_ENDPOINT))
+  const { fetch } = useAuthorizedFetch()
 
   function updateRooms() {
     fetch(ROOMS_ENDPOINT)
-      .then(r => r.json())
+      .then(r => {
+        if (!r)
+          throw Error("Update room bad request")
+
+        return r.json()
+      })
       .then(({ rooms = [] }) => setRooms(rooms))
   }
 
@@ -70,7 +70,7 @@ function RoomNotifierContextProvider({ children }: PropsWithChildren<{}>) {
 
   useEffect(() => {
     updateRooms()
-  }, [])
+  }, [fetch])
 
   useEffect(() => {
     if (notifier) {

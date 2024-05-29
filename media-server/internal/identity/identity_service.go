@@ -29,7 +29,7 @@ type IdentityService struct {
 
 type tokenPair struct {
 	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
+	refreshToken string
 }
 
 func (s *IdentityService) newUserPrivateKey(ctx context.Context, userID uuid.UUID) (pkeyID *uuid.UUID, pkeyJws string, err error) {
@@ -114,7 +114,7 @@ func (s *IdentityService) userNewTokenPair(ctx context.Context, user *User) (*to
 
 	return &tokenPair{
 		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
+		refreshToken: refreshToken,
 	}, nil
 }
 
@@ -201,7 +201,6 @@ func (s *IdentityService) TokenIdentity(ctx context.Context, insecureToken strin
 
 	pubKeys := keyset(privateKeyID.String(), key)
 
-	// Verify token signature
 	trusted, err := jws.Verify([]byte(insecureToken), jws.WithKeySet(pubKeys, jws.WithRequireKid(true)))
 	if err != nil {
 		return nil, err
@@ -213,7 +212,6 @@ func (s *IdentityService) TokenIdentity(ctx context.Context, insecureToken strin
 		return nil, err
 	}
 
-	// Check if token is valid exp date, etc...
 	notValid, err := jwt.Parse([]byte(insecureToken), jwt.WithVerify(false), jwt.WithValidate(false))
 	if err != nil {
 		return nil, err
@@ -257,7 +255,7 @@ func (s *IdentityService) ActualizeTokenPair(ctx context.Context, token *TokenCo
 
 	return &tokenPair{
 		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
+		refreshToken: refreshToken,
 	}, nil
 }
 

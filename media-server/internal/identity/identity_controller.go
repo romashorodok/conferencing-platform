@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	globalprotocol "github.com/romashorodok/conferencing-platform/pkg/protocol"
@@ -52,6 +53,17 @@ func (i *identityController) IdentitySignIn(c echo.Context) error {
 		})
 	}
 
+	refreshTokenCookieExpires := time.Now().AddDate(1, 0, 0)
+	refreshTokenCookie := http.Cookie{
+		Name:     REFRESH_TOKEN_HTTP_ONLY_COOKIE_NAME,
+		Value:    tokenPair.refreshToken,
+		Expires:  refreshTokenCookieExpires,
+		Secure:   true,
+		HttpOnly: true,
+		Path:     "*",
+	}
+	c.SetCookie(&refreshTokenCookie)
+
 	return c.JSON(http.StatusOK, tokenPair)
 }
 
@@ -76,6 +88,17 @@ func (i *identityController) IdentitySignUp(c echo.Context) error {
 		return err
 	}
 
+	refreshTokenCookieExpires := time.Now().AddDate(1, 0, 0)
+	refreshTokenCookie := &http.Cookie{
+		Name:     REFRESH_TOKEN_HTTP_ONLY_COOKIE_NAME,
+		Value:    tokenPair.refreshToken,
+		Expires:  refreshTokenCookieExpires,
+		Secure:   true,
+		HttpOnly: true,
+		Path:     "*",
+	}
+	c.SetCookie(refreshTokenCookie)
+
 	return c.JSON(http.StatusOK, tokenPair)
 }
 
@@ -98,12 +121,23 @@ func (i *identityController) IdentityTokenVerify(c echo.Context) error {
 		})
 	}
 
-	pair, err := i.identityService.ActualizeTokenPair(c.Request().Context(), token)
+	tokenPair, err := i.identityService.ActualizeTokenPair(c.Request().Context(), token)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, newErrorResponse(err))
 	}
 
-	return c.JSON(http.StatusCreated, pair)
+	refreshTokenCookieExpires := time.Now().AddDate(1, 0, 0)
+	refreshTokenCookie := &http.Cookie{
+		Name:     REFRESH_TOKEN_HTTP_ONLY_COOKIE_NAME,
+		Value:    tokenPair.refreshToken,
+		Expires:  refreshTokenCookieExpires,
+		Secure:   true,
+		HttpOnly: true,
+		Path:     "*",
+	}
+	c.SetCookie(refreshTokenCookie)
+
+	return c.JSON(http.StatusCreated, tokenPair)
 }
 
 func (i *identityController) wallEcho(c echo.Context) error {
@@ -124,11 +158,15 @@ func (i *identityController) Resolve(router *echo.Echo) error {
 		echo.MiddlewareFunc(IdentityWallFactoryMiddleware(i.identityService)),
 	}
 
+	httpOnlyMiddleware := []echo.MiddlewareFunc{
+		echo.MiddlewareFunc(IdentityHttpOnlyCookieWallFactoryMiddleware(i.identityService)),
+	}
+
 	router.POST(baseURL+"/sign-in", i.IdentitySignIn)
 	router.POST(baseURL+"/sign-up", i.IdentitySignUp)
-	router.DELETE(baseURL+"/sign-out", i.IdentitySignOut)
+	router.DELETE(baseURL+"/sign-out", i.IdentitySignOut, middlewares...)
 
-	router.POST(baseURL+"/token-verify", i.IdentityTokenVerify, middlewares...)
+	router.POST(baseURL+"/token-verify", i.IdentityTokenVerify, httpOnlyMiddleware...)
 	router.POST(baseURL+"/wall-echo", i.wallEcho, middlewares...)
 
 	return nil

@@ -1,11 +1,11 @@
 import { Dispatch, FormEvent, SetStateAction, createRef, useCallback, useContext, useState } from "react"
-import { Room, RoomNotifierContext, createRoom } from "./room/RoomProvider"
+import { Room, RoomNotifierContext } from "./room/RoomProvider"
 import * as Dialog from '@radix-ui/react-dialog'
 import { PlusIcon } from "@radix-ui/react-icons";
 import { NavLink } from "react-router-dom";
 import { useSize } from "./utils/resize";
 import { useAuth, useAuthorizedFetch } from "./rtc/AuthProvider";
-import { IDENTITY_SERVER } from "./variables";
+import { IDENTITY_SERVER, MEDIA_SERVER } from "./variables";
 import * as yup from 'yup';
 import { useForm } from "./hooks/useForm";
 import * as Form from "@radix-ui/react-form";
@@ -89,20 +89,33 @@ export function DialogWindow(props: {
   )
 }
 
+const DEFAULT_MAX_PARTICIPANTS = 4
+
 function RoomDialog() {
   const [open, setOpen] = useState<boolean>(false)
+  const { fetch } = useAuthorizedFetch()
 
-  async function onSubmit(evt: FormEvent) {
+  const onSubmit = useCallback(async (evt: FormEvent) => {
     evt.preventDefault()
     // @ts-ignore
     const name = evt.target.name.value || undefined
 
-    const resp = await createRoom({ roomId: name, maxParticipants: 4 })
+    try {
+      const resp = await fetch(`${MEDIA_SERVER}/rooms`, {
+        method: 'POST',
+        body: JSON.stringify({
+          roomId: name,
+          maxParticipants: DEFAULT_MAX_PARTICIPANTS,
+        }),
+      })
+      if (!resp) return
 
-    if (resp.status == 201) {
-      setOpen(false)
-    }
-  }
+      if (resp.status == 201) {
+        setOpen(false)
+      }
+    } catch { }
+
+  }, [fetch])
 
   const button =
     <button className="filter-white cursor-pointer px-4" onClick={() => setOpen(true)}>

@@ -29,3 +29,5 @@ func RSA256PkeyAsJwsMessage() ([]byte, error) {
 
 	return jsonBytes, nil
 }
+
+const REFRESH_TOKEN_HTTP_ONLY_COOKIE_NAME = "__refresh_token_http_only"
