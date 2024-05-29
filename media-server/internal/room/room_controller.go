@@ -46,7 +46,6 @@ type roomController struct {
 	logger           *slog.Logger
 	peerConnectionMu sync.Mutex
 	roomNotifier     *RoomNotifier
-	pipeAllocContext *sfu.AllocatorsContext
 }
 
 type filterData struct {
@@ -58,7 +57,6 @@ type filterData struct {
 func (ctrl *roomController) RoomControllerRoomNotifier(ctx echo.Context) error {
 	conn, err := ctrl.upgrader.Upgrade(ctx.Response().Writer, ctx.Request(), nil)
 	if err != nil {
-		ctrl.logger.Error(fmt.Sprintf("Unable upgrade request %s", ctx.Request()))
 		return err
 	}
 
@@ -101,11 +99,10 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 
 	ctrl.peerConnectionMu.Lock()
 	peerContext, err := sfu.NewPeerContext(sfu.NewPeerContextParams{
-		Context:          ctx.Request().Context(),
-		API:              ctrl.webrtc,
-		WS:               w,
-		PipeAllocContext: ctrl.pipeAllocContext,
-		Spreader:         roomCtx.peerContextPool,
+		Context:  ctx.Request().Context(),
+		API:      ctrl.webrtc,
+		WS:       w,
+		Spreader: roomCtx.peerContextPool,
 	})
 	peerContext.SetStats(<-ctrl.stats)
 	ctrl.peerConnectionMu.Unlock()
@@ -131,13 +128,13 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 			return
 		}
 
-		candidate, lErr := json.Marshal(c.ToJSON())
-		if lErr != nil {
-			log.Println(lErr)
+		candidate, cErr := json.Marshal(c.ToJSON())
+		if cErr != nil {
+			log.Println(cErr)
 			return
 		}
 
-		if err := w.WriteJSON(websocketMessage{
+		if err = w.WriteJSON(websocketMessage{
 			Event: "candidate",
 			Data:  string(candidate),
 		}); err != nil {
@@ -180,30 +177,6 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 		return ctrl.wsError(w, err)
 	}
 
-	go func() {
-	retry:
-		peerFilters := peerContext.Filters()
-
-		filtersBytes, err := json.Marshal(peerFilters)
-		if err != nil {
-			time.Sleep(time.Second)
-			goto retry
-		}
-
-		if err = w.WriteJSON(&websocketMessage{
-			Event: "filters",
-			Data:  string(filtersBytes),
-		}); err != nil {
-			select {
-			case <-peerContext.Done():
-				return
-			default:
-				time.Sleep(time.Second)
-				goto retry
-			}
-		}
-	}()
-
 	go peerContext.SynchronizeOfferState()
 
 	message := &websocketMessage{}
@@ -244,17 +217,6 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 				// return ctrl.wsError(w, err)
 			}
 
-		case "filter":
-			var fData filterData
-			if err := json.Unmarshal([]byte(message.Data), &fData); err != nil {
-				return ctrl.wsError(w, err)
-			}
-
-			if err := peerContext.SwitchFilter(fData.Name, fData.MimeType); err != nil {
-				log.Println(err)
-				return ctrl.wsError(w, err)
-			}
-
 		default:
 			return ctrl.wsError(w, errors.New("wrong message event"))
 		}
@@ -293,24 +255,6 @@ func (ctrl *roomController) RoomControllerRoomCreate(ctx echo.Context) error {
 	return ctx.JSON(http.StatusCreated, room.Info())
 }
 
-// func (ctrl *roomController) RoomControllerRoomDelete(ctx echo.Context, sessionID string) error {
-// 	err := ctrl.roomService.DeleteRoom(sessionID)
-// 	if err != nil {
-// 		log.Println(err)
-// 		return err
-// 	}
-// 	ctx.JSON(http.StatusCreated, make(room.RoomDeleteResponse))
-// 	return nil
-// }
-
-// func (ctrl *roomController) RoomControllerRoomList(ctx echo.Context) error {
-// 	result := ctrl.roomService.ListRoom()
-// 	ctx.JSON(http.StatusOK, &room.RoomListResponse{
-// 		Rooms: &result,
-// 	})
-// 	return nil
-// }
-
 func (ctrl *roomController) Resolve(c *echo.Echo) error {
 	go ctrl.roomNotifier.OnUpdateRooms(context.Background(), func(w *wsutils.ThreadSafeWriter) {
 		w.WriteJSON(&websocketMessage{
@@ -337,12 +281,11 @@ type newRoomController_Params struct {
 	fx.In
 	Lifecycle fx.Lifecycle
 
-	RoomService      *RoomService
-	API              *webrtc.API
-	Logger           *slog.Logger
-	Stats            chan *rtpstats.RtpStats
-	RoomNotifier     *RoomNotifier
-	PipeAllocContext *sfu.AllocatorsContext
+	RoomService  *RoomService
+	API          *webrtc.API
+	Logger       *slog.Logger
+	Stats        chan *rtpstats.RtpStats
+	RoomNotifier *RoomNotifier
 }
 
 func NewRoomController(params newRoomController_Params) *roomController {
@@ -355,7 +298,6 @@ func NewRoomController(params newRoomController_Params) *roomController {
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
-		roomNotifier:     params.RoomNotifier,
-		pipeAllocContext: params.PipeAllocContext,
+		roomNotifier: params.RoomNotifier,
 	}
 }

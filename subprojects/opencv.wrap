@@ -1,5 +1,0 @@
-[wrap-git]
-directory = opencv
-url = https://github.com/opencv/opencv.git
-revision = 4.9.0
-depth = 1

@@ -150,16 +150,15 @@ type PeerContext struct {
 	ctx    context.Context
 	cancel context.CancelCauseFunc
 
-	peerID           string
-	webrtc           *webrtc.API
-	peerConnection   *webrtc.PeerConnection
-	stats            *rtpstats.RtpStats
-	offer            *SessionDesc
-	Signal           *Signal
-	Subscriber       *Subscriber
-	pipeAllocContext *AllocatorsContext
-	transceiverPool  *TransceiverPool
-	spreader         trackSpreader
+	peerID          string
+	webrtc          *webrtc.API
+	peerConnection  *webrtc.PeerConnection
+	stats           *rtpstats.RtpStats
+	offer           *SessionDesc
+	Signal          *Signal
+	Subscriber      *Subscriber
+	transceiverPool *TransceiverPool
+	spreader        trackSpreader
 
 	publishTracks   map[string]*PublishTrackContext
 	publishTracksMu sync.Mutex
@@ -241,7 +240,6 @@ func (p *PeerContext) ObserveSubscriber(sub *Subscriber) {
 func (p *PeerContext) OnTrack() {
 	var onTrackMu sync.Mutex
 	pubStreamID := uuid.NewString()
-	filter := FILTER_NONE
 
 	go p.Subscriber.HandleTrackAttach()
 	go p.Subscriber.HandleTrackDetach()
@@ -260,7 +258,7 @@ func (p *PeerContext) OnTrack() {
 		onTrackMu.Lock()
 
 		log.Println("On track - ID:", t.ID(), "SSRC:", t.SSRC(), "StreamID:", t.StreamID())
-		tctx := p.Subscriber.Track(pubStreamID, t, recv, filter)
+		tctx := p.Subscriber.Track(pubStreamID, t, recv)
 
 		ptctx := NewPublishTrackContext(tctx)
 		p.publishTrack(ptctx)
@@ -351,55 +349,6 @@ func (p *PeerContext) GetAudioPublishTrack() (*PublishTrackContext, error) {
 	return nil, ErrTrackNotFound
 }
 
-func (p *PeerContext) SwitchFilter(filterName string, mimeTypeName string) error {
-	filter, err := p.pipeAllocContext.Filter(filterName)
-	if err != nil {
-		return err
-	}
-
-	var mimeType MimeType
-	for _, mime := range filter.MimeTypes {
-		if mimeTypeName == mime.String() {
-			mimeType = mime
-		}
-	}
-	if mimeType.String() == "" {
-		return errors.New("unknown mime type")
-	}
-
-	var track *PublishTrackContext
-	err = nil
-	switch mimeType {
-	case MIME_TYPE_VIDEO:
-		track, err = p.GetVideoPublishTrack()
-	case MIME_TYPE_AUDIO:
-		track, err = p.GetAudioPublishTrack()
-	default:
-		return errors.New("unknown mime type")
-	}
-	if err != nil {
-		log.Println("Unable switch filter. Not found publish track context")
-		return err
-	}
-
-	if err = track.trackContext.SetFilter(filter); err != nil {
-		log.Println("set filter error", err)
-		return err
-	}
-
-	// _ = p.peerConnection.RemoveTrack(track.LoadSender())
-	//
-	// sender, err := p.peerConnection.AddTrack(track.trackContext.GetLocalTrack())
-	// if err != nil {
-	// 	log.Println("unable add track on switch filter", err)
-	// 	return err
-	// }
-	// track.StoreSender(sender)
-	// p.Signal.DispatchOffer()
-
-	return nil
-}
-
 type filterPayload struct {
 	Name     string `json:"name"`
 	MimeType string `json:"mimeType"`
@@ -408,39 +357,6 @@ type filterPayload struct {
 type filtersResult struct {
 	Audio []filterPayload `json:"audio"`
 	Video []filterPayload `json:"video"`
-}
-
-func (p *PeerContext) Filters() *filtersResult {
-	availableFilters := p.pipeAllocContext.Filters()
-
-	var audioFilters []filterPayload
-	var videoFilters []filterPayload
-
-	for _, filter := range availableFilters {
-		for _, mimeType := range filter.MimeTypes {
-			switch t := mimeType; t {
-			case MIME_TYPE_VIDEO:
-				videoFilters = append(videoFilters, filterPayload{
-					Name:     filter.GetName(),
-					MimeType: t.String(),
-					Enabled:  false,
-				})
-			case MIME_TYPE_AUDIO:
-				audioFilters = append(audioFilters, filterPayload{
-					Name:     filter.GetName(),
-					MimeType: t.String(),
-					Enabled:  false,
-				})
-			default:
-				continue
-			}
-		}
-	}
-
-	return &filtersResult{
-		Audio: audioFilters,
-		Video: videoFilters,
-	}
 }
 
 func (p *PeerContext) SynchronizeOfferState() {
@@ -612,15 +528,14 @@ func (p *PeerContext) publishTrackDelete(t *PublishTrackContext) {
 func (p *PeerContext) newSubscriber() {
 	c, cancel := context.WithCancelCause(p.ctx)
 	subscriber := &Subscriber{
-		webrtc:           p.webrtc,
-		peerId:           p.peerID,
-		peerConnection:   p.peerConnection,
-		pipeAllocContext: p.pipeAllocContext,
-		transceiverPool:  p.transceiverPool,
-		busAttachTrack:   make(chan watchTrackAck),
-		busDetachTrack:   make(chan watchTrackAck),
-		ctx:              c,
-		cancel:           cancel,
+		webrtc:          p.webrtc,
+		peerId:          p.peerID,
+		peerConnection:  p.peerConnection,
+		transceiverPool: p.transceiverPool,
+		busAttachTrack:  make(chan watchTrackAck),
+		busDetachTrack:  make(chan watchTrackAck),
+		ctx:             c,
+		cancel:          cancel,
 	}
 	obs := make([]chan SubscriberMessage[any], 0)
 	subscriber.observers.Store(&obs)
@@ -644,25 +559,23 @@ func (p *PeerContext) newPeerConnection() error {
 }
 
 type NewPeerContextParams struct {
-	Context          context.Context
-	WS               WebsocketWriter
-	API              *webrtc.API
-	PipeAllocContext *AllocatorsContext
-	Spreader         trackSpreader
+	Context  context.Context
+	WS       WebsocketWriter
+	API      *webrtc.API
+	Spreader trackSpreader
 }
 
 func NewPeerContext(params NewPeerContextParams) (*PeerContext, error) {
 	ctx, cancel := context.WithCancelCause(params.Context)
 	p := &PeerContext{
-		peerID:           uuid.NewString(),
-		ctx:              ctx,
-		cancel:           cancel,
-		webrtc:           params.API,
-		pipeAllocContext: params.PipeAllocContext,
-		publishTracks:    make(map[string]*PublishTrackContext),
-		offer:            NewSessionDesc(ctx),
-		transceiverPool:  NewTransceiverPool(),
-		spreader:         params.Spreader,
+		peerID:          uuid.NewString(),
+		ctx:             ctx,
+		cancel:          cancel,
+		webrtc:          params.API,
+		publishTracks:   make(map[string]*PublishTrackContext),
+		offer:           NewSessionDesc(ctx),
+		transceiverPool: NewTransceiverPool(),
+		spreader:        params.Spreader,
 	}
 	if err := p.newPeerConnection(); err != nil {
 		return nil, err

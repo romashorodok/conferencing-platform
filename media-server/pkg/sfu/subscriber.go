@@ -42,7 +42,6 @@ type Subscriber struct {
 	observers   atomic.Pointer[[]chan SubscriberMessage[any]]
 	observersMu sync.Mutex
 
-	pipeAllocContext *AllocatorsContext
 	transceiverPool  *TransceiverPool
 
 	ctx    context.Context
@@ -217,7 +216,7 @@ func (s *Subscriber) HandleTrackDetach() {
 	}
 }
 
-func (s *Subscriber) Track(streamID string, t *webrtc.TrackRemote, recv *webrtc.RTPReceiver, filter *Filter) *TrackContext {
+func (s *Subscriber) Track(streamID string, t *webrtc.TrackRemote, recv *webrtc.RTPReceiver) *TrackContext {
 	s.tracksMu.Lock()
 	defer s.tracksMu.Unlock()
 
@@ -236,9 +235,6 @@ func (s *Subscriber) Track(streamID string, t *webrtc.TrackRemote, recv *webrtc.
 
 		CodecParams: t.Codec(),
 		Kind:        t.Kind(),
-
-		Filter:           filter,
-		PipeAllocContext: s.pipeAllocContext,
 
 		PeerConnection: s.peerConnection,
 		API:            s.webrtc,
