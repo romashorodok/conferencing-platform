@@ -7,7 +7,6 @@ type MediaStreamContextType = {
   mediaStreamReady: boolean
   onPageMountMediaStreamMutex: Mutex | null
 
-  startFaceDetection: (unlock?: Promise<() => void>) => Promise<void>
   startNormal: (unlock?: Promise<() => void>) => Promise<void>
 };
 
@@ -119,7 +118,6 @@ const defaultMediaStream =
 
     tracks.forEach(t => stream.addTrack(t))
     resolve(stream)
-
   })
 
 function MediaStreamProvider({ children }: PropsWithChildren<{}>) {

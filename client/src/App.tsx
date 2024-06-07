@@ -679,7 +679,7 @@ export function RoomStream({
 }
 
 function App() {
-  const { startFaceDetection, startNormal } = useContext(MediaStreamContext)
+  const { startNormal } = useContext(MediaStreamContext)
 
   return (
     <div className="flex flex-col">
@@ -688,8 +688,6 @@ function App() {
       <CameraComponent />
       <button
         className="Button box-border w-[120px] inline-flex h-[35px] items-center justify-center rounded-[4px] px-[15px] font-medium leading-none cursor-pointer focus:outline-none mt-[10px]" onClick={() => startNormal()}>Normal</button>
-      <button
-        className="Button box-border w-[120px] inline-flex h-[35px] items-center justify-center rounded-[4px] px-[15px] font-medium leading-none cursor-pointer focus:outline-none mt-[10px]" onClick={() => startFaceDetection()}>Face detection</button>
     </div>
   )
 }

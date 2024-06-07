@@ -1,4 +1,5 @@
 docker-compose-prod.yml
+.idea
 .dockercache
 .datacache
 .DS_Store

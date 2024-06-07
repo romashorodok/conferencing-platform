@@ -249,7 +249,21 @@ func (p *PeerContext) OnTrack() {
 		onTrackMu.Lock()
 
 		log.Println("On track - ID:", t.ID(), "SSRC:", t.SSRC(), "StreamID:", t.StreamID())
-		tctx := p.Subscriber.Track(pubStreamID, t, recv)
+
+		tctx := NewTrackContext(p.ctx, NewTrackContextParams{
+			SourcePeerID: p.peerID,
+			ID:           t.ID(),
+			StreamID:     pubStreamID,
+			RID:          t.RID(),
+			SSRC:         t.SSRC(),
+			PayloadType:  t.PayloadType(),
+
+			CodecParams: t.Codec(),
+			Kind:        t.Kind(),
+
+			PeerConnection: p.peerConnection,
+			API:            p.webrtc,
+		})
 
 		ptctx := NewPublishTrackContext(tctx)
 		p.publishTrack(ptctx)
@@ -266,9 +280,6 @@ func (p *PeerContext) OnTrack() {
 				return
 			}
 		}
-
-		TrackContextRegistry.Add(tctx)
-		defer TrackContextRegistry.Remove(tctx)
 
 		err := p.spreader.TrackDownToPeers(p, tctx)
 		if err != nil {

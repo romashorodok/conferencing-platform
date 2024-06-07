@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom"
 import { AudioControlLarge, RoomStream, VideoControlLarge, useRoom } from "../../App"
 import { MediaStreamContext } from "../../rtc/MediaStreamProvider"
 import { useSize } from "../../utils/resize";
-import { StopIcon, UserIcon } from "../../AppLayout";
+import { StopIcon } from "../../AppLayout";
 
 type GridSize = {
   columns: number,
@@ -113,14 +113,10 @@ function GridLayout({
 }
 
 export function FaceDetectionButtons() {
-  const { startFaceDetection, startNormal } = useContext(MediaStreamContext)
+  const {  startNormal } = useContext(MediaStreamContext)
 
   return (
     <>
-      <button className="Button cursor-pointer px-2" onClick={() => startFaceDetection()}>
-        <UserIcon className="w-[32px] h-[32px]" />
-      </button>
-
       <button className="Button cursor-pointer px-2" onClick={() => startNormal()}>
         <StopIcon className="w-[32px] h-[32px]" />
       </button>

@@ -8,7 +8,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/google/uuid"
 	webrtc "github.com/pion/webrtc/v4"
 )
 
@@ -42,7 +41,7 @@ type Subscriber struct {
 	observers   atomic.Pointer[[]chan SubscriberMessage[any]]
 	observersMu sync.Mutex
 
-	transceiverPool  *TransceiverPool
+	transceiverPool *TransceiverPool
 
 	ctx    context.Context
 	cancel context.CancelCauseFunc
@@ -214,31 +213,6 @@ func (s *Subscriber) HandleTrackDetach() {
 			s.handleDetachTrackMu.Unlock()
 		}
 	}
-}
-
-func (s *Subscriber) Track(streamID string, t *webrtc.TrackRemote, recv *webrtc.RTPReceiver) *TrackContext {
-	s.tracksMu.Lock()
-	defer s.tracksMu.Unlock()
-
-	id := t.ID()
-	if id == "" {
-		id = uuid.NewString()
-	}
-
-	return NewTrackContext(s.ctx, NewTrackContextParams{
-		SourcePeerID: s.peerId,
-		ID:           id,
-		StreamID:     streamID,
-		RID:          t.RID(),
-		SSRC:         t.SSRC(),
-		PayloadType:  t.PayloadType(),
-
-		CodecParams: t.Codec(),
-		Kind:        t.Kind(),
-
-		PeerConnection: s.peerConnection,
-		API:            s.webrtc,
-	})
 }
 
 func (s *Subscriber) AttachTrack(t *TrackContext) watchTrackAck {

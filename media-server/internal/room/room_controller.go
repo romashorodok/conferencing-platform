@@ -50,12 +50,6 @@ type roomController struct {
 	identityService  *identity.IdentityService
 }
 
-type filterData struct {
-	Enabled  bool   `json:"enabled"`
-	Name     string `json:"name"`
-	MimeType string `json:"mimeType"`
-}
-
 func (ctrl *roomController) RoomControllerRoomNotifier(ctx echo.Context) error {
 	conn, err := ctrl.upgrader.Upgrade(ctx.Response().Writer, ctx.Request(), nil)
 	if err != nil {
@@ -75,10 +69,6 @@ func (ctrl *roomController) RoomControllerRoomNotifier(ctx echo.Context) error {
 			return ErrRoomCancelByUser
 		}
 	}
-}
-
-type SubscribeMessage struct {
-	RestartICE bool `json:"restartICE"`
 }
 
 func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId string) error {
@@ -164,6 +154,7 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 
 	go func() {
 		ticker := time.NewTicker(time.Second * 10)
+		defer ticker.Stop()
 		for {
 			select {
 			case <-peerContext.Done():
@@ -216,7 +207,6 @@ func (ctrl *roomController) RoomControllerRoomJoin(ctx echo.Context, roomId stri
 			log.Println("Offer State recv,", offerState.StateHash)
 			if err := peerContext.CommitOfferState(offerState); err != nil {
 				log.Println("[commit-offer-state] Commit offer state. Err:", err)
-				// return ctrl.wsError(w, err)
 			}
 
 		default:
