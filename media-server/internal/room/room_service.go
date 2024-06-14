@@ -131,17 +131,6 @@ func (s *RoomService) ListRoom() []room.Room {
 	return result
 }
 
-//
-// func (s *roomService) DeleteRoom(roomID string) error {
-// 	room, exist := s.roomContextMap[roomID]
-// 	if !exist {
-// 		return ErrRoomNotExist
-// 	}
-// 	room.Cancel(ErrRoomCancelByUser)
-// 	delete(s.roomContextMap, roomID)
-// 	return nil
-// }
-
 func NullableRoomID(roomID *string) string {
 	if roomID != nil && *roomID != "" {
 		return *roomID

@@ -95,17 +95,14 @@ export class RTCEngine extends EventEmitter {
     this.peerConnection?.close()
   }
 
-  // Look at how they modify SDP to achieve specific codec options supported by the browser.
-  // https://github.com/livekit/client-sdk-js/blob/761711adb4195dc49a0b32e1e4f88726659dac94/src/room/PCTransport.ts#L129
   async setRemoteDescription(sd: RTCSessionDescription) {
-    // when remote description is an offer, my remote server is polite
-    // By that the server can initiate renegotiation(change tracks, ...other params) 
     if (sd.type === 'offer') {
       this.peerConnection?.setRemoteDescription(sd)
       return
     }
 
-    if (sd.type === 'answer') { }
+    if (sd.type === 'answer') {
+    }
     throw new Error("undefined sdp type")
   }
 
@@ -115,7 +112,8 @@ export class RTCEngine extends EventEmitter {
       return
     }
 
-    if (sd.type === 'offer') { }
+    if (sd.type === 'offer') {
+    }
     throw new Error("undefined sdp type")
   }
 
@@ -149,10 +147,7 @@ const replaceTrack = (senders: RTCRtpSender[] | undefined, tracks: MediaStreamTr
 export enum SignalEvent {
   Offer = "offer",
   Answer = "answer",
-  // https://datatracker.ietf.org/doc/html/draft-ietf-mmusic-trickle-ice
-  // TrickleIceCandidate = "trickle-ice-candidate"
   TrickleIceCandidate = "candidate",
-
   Filters = "filters"
 }
 
@@ -161,7 +156,6 @@ export class Signal extends EventEmitter {
 
   public onConnect = new Mutex()
   private onConnectUnlock: Promise<() => void>
-  // private lock = new Mutex()
 
   constructor(public readonly uri: string = "ws://localhost:8080/ws-rtc-signal") {
     super()
@@ -272,18 +266,6 @@ export function useRoom() {
     return false
   }, [signal])
 
-  // process when two peers exchange session descriptions about their capabilities and establish a connection
-  //
-  // |> offer: server
-  // |> setlocaldescription: server  
-  // |> (-> (signal) clientrecv) // client receive the offer from server
-  // |> setremotedescription: client
-  // |> answer: client
-  // |> setlocaldescripton: client
-  // |> (-> (signal) serverrecv) // server receive the answer from client
-  // |> setremotedescription: server
-  //
-  // After that, peers must send their ice candidates
   const join = useCallback(async ({ roomID }: { roomID: string }) => {
     if (isSameRoom(roomID))
       return
@@ -392,7 +374,9 @@ export function useRoom() {
 export function VideoControl({ className }: { className?: string }) {
   const { isVideoMuted, setVideoMuted } = useContext(ControlsContext)
   return (
-    <button className={`${isVideoMuted ? 'bg-red-500' : 'bg-green-500'} cursor-pointer p-1 rounded-lg active:outline-none hover:outline-none focus:outline-none ${className}`} onClick={() => setVideoMuted(!isVideoMuted)}>
+    <button
+      className={`${isVideoMuted ? 'bg-red-500' : 'bg-green-500'} cursor-pointer p-1 rounded-lg active:outline-none hover:outline-none focus:outline-none ${className}`}
+      onClick={() => setVideoMuted(!isVideoMuted)}>
       <img className={`w-[24px] h-[24px]`} src={cameraSvg} />
     </button>
   )
@@ -401,7 +385,9 @@ export function VideoControl({ className }: { className?: string }) {
 export function AudioControl({ className }: { className?: string, width?: number, height?: number }) {
   const { isAudioMuted, setAudioMuted } = useContext(ControlsContext)
   return (
-    <button className={`${isAudioMuted ? 'bg-red-500' : 'bg-green-500'} cursor-pointer p-1 rounded-lg active:outline-none hover:outline-none focus:outline-none ${className}`} onClick={() => setAudioMuted(!isAudioMuted)}>
+    <button
+      className={`${isAudioMuted ? 'bg-red-500' : 'bg-green-500'} cursor-pointer p-1 rounded-lg active:outline-none hover:outline-none focus:outline-none ${className}`}
+      onClick={() => setAudioMuted(!isAudioMuted)}>
       <img className={`w-[24px] h-[24px]`} src={microphoneSvg} />
     </button>
   )
@@ -411,7 +397,9 @@ export function AudioControl({ className }: { className?: string, width?: number
 export function VideoControlLarge({ className }: { className?: string }) {
   const { isVideoMuted, setVideoMuted } = useContext(ControlsContext)
   return (
-    <button className={`${isVideoMuted ? 'bg-red-500' : 'bg-green-500'} cursor-pointer p-1 rounded-lg active:outline-none hover:outline-none focus:outline-none ${className}`} onClick={() => setVideoMuted(!isVideoMuted)}>
+    <button
+      className={`${isVideoMuted ? 'bg-red-500' : 'bg-green-500'} cursor-pointer p-1 rounded-lg active:outline-none hover:outline-none focus:outline-none ${className}`}
+      onClick={() => setVideoMuted(!isVideoMuted)}>
       <img className={`w-[32px] h-[32px]`} src={cameraSvg} />
     </button>
   )
@@ -420,7 +408,9 @@ export function VideoControlLarge({ className }: { className?: string }) {
 export function AudioControlLarge({ className }: { className?: string, width?: number, height?: number }) {
   const { isAudioMuted, setAudioMuted } = useContext(ControlsContext)
   return (
-    <button className={`${isAudioMuted ? 'bg-red-500' : 'bg-green-500'} cursor-pointer p-1 rounded-lg active:outline-none hover:outline-none focus:outline-none ${className}`} onClick={() => setAudioMuted(!isAudioMuted)}>
+    <button
+      className={`${isAudioMuted ? 'bg-red-500' : 'bg-green-500'} cursor-pointer p-1 rounded-lg active:outline-none hover:outline-none focus:outline-none ${className}`}
+      onClick={() => setAudioMuted(!isAudioMuted)}>
       <img className={`w-[32px] h-[32px]`} src={microphoneSvg} />
     </button>
   )
@@ -442,7 +432,7 @@ export function CameraComponent() {
 
   return (
     <div className={`min-w-[400px] min-h-[120px] max-w-max max-h-max`}>
-      <div className={`flex place-self-center place-content-center relative w-full h-full`} >
+      <div className={`flex place-self-center place-content-center relative w-full h-full`}>
         <div className={`${mediaStreamReady ? 'visible' : 'invisible'} contents z-10`}>
           <video ref={video} className={`z-20 w-5/6 h-5/6 object-cover place-self-center`} autoPlay muted />
           <div className={`absolute left-[41%] bottom-[10%] z-20 flex gap-6`}>
@@ -453,7 +443,7 @@ export function CameraComponent() {
         {mediaStreamReady
           ? null
           : (
-            <div className={`absolute left-[43%] bottom-[10%] z-20`} >
+            <div className={`absolute left-[43%] bottom-[10%] z-20`}>
               <p>Loading</p>
               <LoadingDots absolute={false} />
             </div>
@@ -495,13 +485,13 @@ function RoomParticipant({
   }, [video, mediaStream])
 
   return (
-    <div className={`flex place-self-center place-content-center relative w-full h-full`} >
+    <div className={`flex place-self-center place-content-center relative w-full h-full`}>
       <div className={`${isLoading ? 'invisible' : 'visible'} contents`}>
         <video ref={video} className={`z-10 w-5/6 h-5/6 place-self-center`} />
       </div>
       {isLoading
         ? (
-          <div className={`absolute left-[43%] bottom-[10%] z-10`} >
+          <div className={`absolute left-[43%] bottom-[10%] z-10`}>
             <p>Loading</p>
             <LoadingDots absolute={false} />
           </div>
@@ -603,7 +593,8 @@ function RoomStatContainer({
         </Popover.Trigger>
         <Popover.Portal>
           <Popover.Content className={`z-30`}>
-            <ScrollArea.Root className={`flex p-4 w-[448px] h-[252px] bg-black-t border-dimgray rounded z-30`}>
+            <ScrollArea.Root
+              className={`flex p-4 w-[448px] h-[252px] bg-black-t border-dimgray rounded z-30`}>
               <ScrollArea.Viewport>
                 <StreamStats statList={statList} streamID={streamID} />
               </ScrollArea.Viewport>
@@ -669,7 +660,7 @@ export function RoomStream({
   return (
     <div className={`flex self-center relative h-full`}>
       <RoomParticipant mediaStream={mediaStream} isLoading={isLoading} />
-      <RoomStatContainer show={showStats} streamID={mediaStream.id} statList={statList} >
+      <RoomStatContainer show={showStats} streamID={mediaStream.id} statList={statList}>
         <button onClick={() => setShowStats(!showStats)}>
           <img className={`w-[22px] h-[22px] filter-white`} src={infoSvg} />
         </button>
@@ -687,7 +678,9 @@ function App() {
 
       <CameraComponent />
       <button
-        className="Button box-border w-[120px] inline-flex h-[35px] items-center justify-center rounded-[4px] px-[15px] font-medium leading-none cursor-pointer focus:outline-none mt-[10px]" onClick={() => startNormal()}>Normal</button>
+        className="Button box-border w-[120px] inline-flex h-[35px] items-center justify-center rounded-[4px] px-[15px] font-medium leading-none cursor-pointer focus:outline-none mt-[10px]"
+        onClick={() => startNormal()}>Normal
+      </button>
     </div>
   )
 }

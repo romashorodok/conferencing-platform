@@ -113,7 +113,7 @@ function GridLayout({
 }
 
 export function FaceDetectionButtons() {
-  const {  startNormal } = useContext(MediaStreamContext)
+  const { startNormal } = useContext(MediaStreamContext)
 
   return (
     <>
@@ -142,7 +142,6 @@ function RoomPage() {
 
     (async () => {
       await onPageMountMediaStreamMutex.wait
-      // Provide here the media stream is wrong approach. it will be trigger the join
       join({ roomID })
       console.log(onPageMountMediaStreamMutex)
     })()

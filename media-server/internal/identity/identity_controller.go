@@ -102,15 +102,9 @@ func (i *identityController) IdentitySignUp(c echo.Context) error {
 	return c.JSON(http.StatusOK, tokenPair)
 }
 
-type identityTokenVerifyRequestHeader struct {
-	Authorization string `header:"authorization"`
-}
-
 type identityTokenVerifyValidResponse struct {
 	Verified bool `json:"verified"`
 }
-
-var _ErrEmptyAuthorizationHeader = errors.New("empty authorization header")
 
 func (i *identityController) IdentityTokenVerify(c echo.Context) error {
 	token := WithTokenContext(c)

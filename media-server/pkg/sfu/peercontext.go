@@ -118,8 +118,6 @@ func (s *SessionDesc) Submit(offerHash string) error {
 		return ErrSubmitOfferRaceCondition
 	}
 
-	//
-
 	s.negotiatedHash.Store(offerHash)
 
 	negotiated := s.pending.Swap(nil)

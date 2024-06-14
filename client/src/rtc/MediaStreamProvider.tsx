@@ -12,7 +12,6 @@ type MediaStreamContextType = {
 
 export const MediaStreamContext = createContext<MediaStreamContextType>(undefined!)
 
-// Firefox only
 async function videoScaleCanvas(streamPromise: Promise<MediaStream>, width: number, height: number): Promise<MediaStream> {
   const video = document.createElement('video');
   video.width = width
@@ -48,7 +47,6 @@ async function videoScaleCanvas(streamPromise: Promise<MediaStream>, width: numb
 
 let videoStream: Promise<MediaStream>
 if (isChromiumBased()) {
-  // NOTE: Selecting video may be work only on localhost
   const inbound = navigator.mediaDevices.getUserMedia({
     video: {
       width: 320,
@@ -58,11 +56,7 @@ if (isChromiumBased()) {
 
   videoStream = inbound
 } else if (isFireFox()) {
-  // NOTE: Firefox not support low resolutions
-  // This lead that I need high performance, when I do the filter of the stream
   const inbound = navigator.mediaDevices.getUserMedia({ video: true })
-  // NOTE: workaround of that problem. This not lead to high cpu usage
-  // But also the drawing may be in a web-worker
   videoStream = videoScaleCanvas(inbound, 320, 180)
 } else {
   throw new Error("unsupported browser target")
