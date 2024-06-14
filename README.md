@@ -43,6 +43,8 @@ docker compose watch
 
 Allow self-signed cert and open https://localhost:443
 
+Login and password: ```root root```
+
 ### Migrations
 
 **Deps:**
