@@ -1,3 +1,4 @@
+*Simplified version in other branch*
 
 ## Build
 
@@ -33,3 +34,31 @@ docker context use prod && \
   docker-compose -f docker-compose-prod.yml up -d && \
   docker context use default
 ```
+### Dev
+> [!IMPORTANT]
+> To run need Docker Compose version 2.22 and later.
+
+```bash
+docker compose watch
+```
+
+Allow self-signed cert and open https://localhost:443
+
+Login and password: ```root root```
+
+### Migrations
+
+**Deps:**
+- [goose](https://github.com/pressly/goose)
+
+Open [media-server](./media-server/)
+```bash
+make up
+```
+
+## Info
+**Supported browsers**:
+- Chrome 126 (later versions may behave differently)
+- Firefox 126 (on Docker container, there is a 10-second picture loss)
+- Android Chrome Mobile 126 (later versions may behave differently)
+- Android Firefox 126 (only audio sending)
